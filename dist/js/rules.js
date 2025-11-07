@@ -1,0 +1,43 @@
+class RulesManager{constructor(){this.rules=[],this.currentRule=null,this.ruleModal=null,this.deleteModal=null,this.publicDashboard=!1,this.authenticated=!1,this.init()}async init(){await this.checkPublicMode(),this.ruleModal=new bootstrap.Modal(document.getElementById("ruleModal")),this.deleteModal=new bootstrap.Modal(document.getElementById("deleteModal")),this.setupEventListeners(),this.setupThemeToggle(),await this.loadRules()}async checkPublicMode(){try{const e=await fetch("/config",{credentials:"same-origin"});if(e.ok){const t=await e.json();this.publicDashboard=t.public_dashboard||!1,this.authenticated=t.authenticated||!1;const n=document.getElementById("addRuleBtn"),s=document.getElementById("reloadRulesBtn"),o=!this.publicDashboard||this.authenticated;n&&(n.style.display=o?"":"none"),s&&(s.style.display=o?"":"none")}}catch(e){console.error("Error checking public mode:",e)}}setupEventListeners(){document.getElementById("addRuleBtn").addEventListener("click",()=>this.showAddRule()),document.getElementById("reloadRulesBtn").addEventListener("click",()=>this.reloadFromYAML()),document.getElementById("ruleForm").addEventListener("submit",e=>this.handleSubmit(e)),document.getElementById("confirmDeleteBtn").addEventListener("click",()=>this.confirmDelete()),document.getElementById("logoutBtn").addEventListener("click",()=>this.logout())}setupThemeToggle(){const n=document.getElementById("themeToggle"),e=document.documentElement,t=localStorage.getItem("theme")||"light";e.setAttribute("data-bs-theme",t),this.updateThemeIcon(t),n.addEventListener("click",()=>{const n=e.getAttribute("data-bs-theme"),t=n==="light"?"dark":"light";e.setAttribute("data-bs-theme",t),localStorage.setItem("theme",t),this.updateThemeIcon(t)})}updateThemeIcon(e){const t=document.querySelector("#themeToggle i");t.className=e==="light"?"bi bi-moon-fill":"bi bi-sun-fill"}async loadRules(){try{const e=await fetch("/rules");if(!e.ok)throw new Error("Failed to load rules");const t=await e.json();this.rules=t.rules||[],this.renderRules(),this.updateStatusBadge(!0)}catch(e){console.error("Error loading rules:",e),this.showToast("Failed to load rules","danger"),this.updateStatusBadge(!1)}}renderRules(){const e=document.getElementById("rulesTableBody");if(document.getElementById("rulesCount").textContent=this.rules.length,this.rules.length===0){e.innerHTML=`
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-5">
+                        <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                        No rules found. Click "Add Rule" to create one.
+                    </td>
+                </tr>
+            `;return}e.innerHTML=this.rules.map(e=>this.renderRuleRow(e)).join("")}renderRuleRow(e){const t=e.enabled?'<i class="bi bi-check-circle-fill text-success"></i>':'<i class="bi bi-x-circle-fill text-muted"></i>',n={critical:"danger",high:"warning",medium:"info",low:"secondary"}[e.priority]||"secondary",s=this.publicDashboard&&!this.authenticated?"":`
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-secondary" onclick="rulesManager.toggleRule('${e.name}')" title="${e.enabled?"Disable":"Enable"}">
+                        <i class="bi ${e.enabled?"bi-pause":"bi-play"}"></i>
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="rulesManager.showEditRule('${e.name}')" title="Edit">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-outline-danger" onclick="rulesManager.showDeleteRule('${e.name}')" title="Delete">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </td>
+        `;return`
+            <tr>
+                <td class="text-center">${t}</td>
+                <td>
+                    <div class="fw-semibold">${this.escapeHtml(e.name)}</div>
+                    ${e.comment?`<small class="text-muted">${this.escapeHtml(e.comment)}</small>`:""}
+                </td>
+                <td>
+                    <code class="small">${this.escapeHtml(e.keywords)}</code>
+                </td>
+                <td>
+                    <span class="badge bg-${n}">${e.priority}</span>
+                </td>
+                <td class="text-center">
+                    <span class="badge bg-secondary">${e.order}</span>
+                </td>
+                ${s}
+            </tr>
+        `}showAddRule(){this.currentRule=null,document.getElementById("ruleModalTitle").textContent="Add Rule",document.getElementById("ruleForm").reset(),this.ruleModal.show()}showEditRule(e){const t=this.rules.find(t=>t.name===e);if(!t)return;this.currentRule=t,document.getElementById("ruleModalTitle").textContent="Edit Rule",document.getElementById("ruleName").value=t.name,document.getElementById("ruleExpression").value=t.keywords,document.getElementById("rulePriority").value=t.priority,document.getElementById("ruleEnabled").value=t.enabled.toString(),document.getElementById("ruleComment").value=t.comment||"",document.getElementById("ruleName").readOnly=!0,this.ruleModal.show()}async handleSubmit(e){e.preventDefault();const t=document.getElementById("ruleName").value.trim(),s=document.getElementById("ruleExpression").value.trim(),o=document.getElementById("rulePriority").value,i=document.getElementById("ruleEnabled").value==="true",a=document.getElementById("ruleComment").value.trim(),n={name:t,keywords:s,priority:o,enabled:i,comment:a};try{let e;if(this.currentRule?e=await fetch(`/rules/update/${t}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(n)}):e=await fetch("/rules/create",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(n)}),!e.ok){const t=await e.json();throw new Error(t.error||"Failed to save rule")}this.showToast(`Rule ${this.currentRule?"updated":"created"} successfully`,"success"),this.ruleModal.hide(),this.loadRules(),document.getElementById("ruleName").readOnly=!1}catch(e){console.error("Error saving rule:",e),this.showToast(e.message,"danger")}}async toggleRule(e){const t=this.rules.find(t=>t.name===e);if(!t)return;try{const n=await fetch(`/rules/toggle/${e}`,{method:"PUT"});if(!n.ok)throw new Error("Failed to toggle rule");this.showToast(`Rule ${t.enabled?"disabled":"enabled"} successfully`,"success"),this.loadRules()}catch(e){console.error("Error toggling rule:",e),this.showToast("Failed to toggle rule","danger")}}showDeleteRule(e){this.currentRule=this.rules.find(t=>t.name===e),document.getElementById("deleteRuleName").textContent=e,this.deleteModal.show()}async confirmDelete(){if(!this.currentRule)return;try{const e=await fetch(`/rules/delete/${this.currentRule.name}`,{method:"DELETE"});if(!e.ok)throw new Error("Failed to delete rule");this.showToast("Rule deleted successfully","success"),this.deleteModal.hide(),this.loadRules()}catch(e){console.error("Error deleting rule:",e),this.showToast("Failed to delete rule","danger")}}async reloadFromYAML(){if(!confirm("This will reload all rules from the rules.yaml file. Any unsaved changes will be lost. Continue?"))return;try{const e=await fetch("/rules/reload",{method:"POST"});if(!e.ok)throw new Error("Failed to reload rules");this.showToast("Rules reloaded from YAML successfully","success"),this.loadRules()}catch(e){console.error("Error reloading rules:",e),this.showToast("Failed to reload rules from YAML","danger")}}updateStatusBadge(e){const t=document.getElementById("statusBadge");e?(t.className="badge bg-success",t.innerHTML='<i class="bi bi-check-circle me-1"></i>Online'):(t.className="badge bg-danger",t.innerHTML='<i class="bi bi-x-circle me-1"></i>Offline')}escapeHtml(e){if(!e)return"";const t=document.createElement("div");return t.textContent=e,t.innerHTML}showToast(e,t="info"){const n=document.createElement("div");n.className=`alert alert-${t} alert-dismissible fade show position-fixed top-0 end-0 m-3`,n.style.zIndex="9999",n.innerHTML=`
+            ${e}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `,document.body.appendChild(n),setTimeout(()=>{n.remove()},5e3)}async logout(){try{const e=await fetch("/auth/logout",{method:"POST"});e.ok?window.location.href="/login":this.showToast("Failed to logout","danger")}catch(e){console.error("Error logging out:",e),this.showToast("Failed to logout","danger")}}}const rulesManager=new RulesManager

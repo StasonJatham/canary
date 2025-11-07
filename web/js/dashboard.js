@@ -37,20 +37,27 @@ class Dashboard {
 
     async checkPublicMode() {
         try {
-            const response = await fetch('/config');
+            const response = await fetch('/config', {
+                credentials: 'same-origin'
+            });
             if (response.ok) {
                 const data = await response.json();
                 this.publicDashboard = data.public_dashboard || false;
                 this.authenticated = data.authenticated || false;
 
-                // Hide clear button only if in public mode AND not authenticated
-                if (this.publicDashboard && !this.authenticated) {
-                    const clearBtn = document.getElementById('clearBtn');
-                    if (clearBtn) clearBtn.style.display = 'none';
+                const clearBtn = document.getElementById('clearBtn');
+
+                // Show button if: NOT in public mode OR authenticated
+                // Hide button if: in public mode AND not authenticated
+                const shouldShowButton = !this.publicDashboard || this.authenticated;
+
+                if (clearBtn) {
+                    clearBtn.style.display = shouldShowButton ? '' : 'none';
                 }
             }
         } catch (error) {
             console.error('Error checking public mode:', error);
+            // On error, keep button hidden for security
         }
     }
 

@@ -27,22 +27,31 @@ class RulesManager {
 
     async checkPublicMode() {
         try {
-            const response = await fetch('/config');
+            const response = await fetch('/config', {
+                credentials: 'same-origin'
+            });
             if (response.ok) {
                 const data = await response.json();
                 this.publicDashboard = data.public_dashboard || false;
                 this.authenticated = data.authenticated || false;
 
-                // Hide action buttons only if in public mode AND not authenticated
-                if (this.publicDashboard && !this.authenticated) {
-                    const addRuleBtn = document.getElementById('addRuleBtn');
-                    const reloadBtn = document.getElementById('reloadRulesBtn');
-                    if (addRuleBtn) addRuleBtn.style.display = 'none';
-                    if (reloadBtn) reloadBtn.style.display = 'none';
+                const addRuleBtn = document.getElementById('addRuleBtn');
+                const reloadBtn = document.getElementById('reloadRulesBtn');
+
+                // Show buttons if: NOT in public mode OR authenticated
+                // Hide buttons if: in public mode AND not authenticated
+                const shouldShowButtons = !this.publicDashboard || this.authenticated;
+
+                if (addRuleBtn) {
+                    addRuleBtn.style.display = shouldShowButtons ? '' : 'none';
+                }
+                if (reloadBtn) {
+                    reloadBtn.style.display = shouldShowButtons ? '' : 'none';
                 }
             }
         } catch (error) {
             console.error('Error checking public mode:', error);
+            // On error, keep buttons hidden for security
         }
     }
 

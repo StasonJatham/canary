@@ -107,6 +107,9 @@ func main() {
 	// Start session cleanup
 	handlers.StartSessionCleanup()
 
+	// Start CSRF token cleanup
+	auth.StartCSRFCleanup()
+
 	// CORS middleware
 	corsMiddleware := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +150,7 @@ func main() {
 	// Create auth middleware
 	authMW := auth.AuthMiddleware(db, config.SecureCookies)
 	readOnlyMW := auth.ReadOnlyMiddleware(db, config.SecureCookies)
+	csrfMW := auth.CSRFMiddleware(db, config.SecureCookies)
 
 	// Choose middleware based on PUBLIC_DASHBOARD mode
 	viewMW := authMW // Default: require auth for viewing
@@ -154,24 +158,40 @@ func main() {
 		viewMW = readOnlyMW // Public mode: allow viewing, require auth for edits
 	}
 
-	// Routes that can be read-only in public mode
+	// Initialize templates
+	if err := handlers.InitTemplates(); err != nil {
+		log.Printf("Warning: Failed to initialize templates: %v", err)
+	}
+
+	// HTML Pages (template-based, server-rendered)
 	mux.Handle("/", viewMW(http.HandlerFunc(handlers.ServeUI)))
+	mux.Handle("/rules", viewMW(http.HandlerFunc(handlers.ServeRulesPage)))       // HTML view
+	mux.Handle("/rules/new", authMW(http.HandlerFunc(handlers.ServeRuleForm)))    // HTML form
+	mux.Handle("/rules/edit/", authMW(http.HandlerFunc(handlers.ServeRuleForm)))  // HTML form
 	mux.Handle("/docs", viewMW(http.HandlerFunc(handlers.ServeAPIDocs)))
 	mux.Handle("/openapi.yaml", viewMW(http.HandlerFunc(handlers.ServeOpenAPISpec)))
+
+	// JSON API endpoints (for backward compatibility and programmatic access)
+	mux.Handle("/api/matches", viewMW(http.HandlerFunc(handlers.GetMatches)))
+	mux.Handle("/api/matches/recent", viewMW(http.HandlerFunc(handlers.GetRecentFromDB)))
+	mux.Handle("/api/rules", viewMW(http.HandlerFunc(handlers.GetRules)))
+	mux.Handle("/api/metrics", viewMW(http.HandlerFunc(handlers.Metrics)))
+	mux.Handle("/api/metrics/performance", viewMW(http.HandlerFunc(handlers.GetPerformanceMetrics)))
+
+	// Keep old paths for backward compatibility
 	mux.Handle("/matches", viewMW(http.HandlerFunc(handlers.GetMatches)))
 	mux.Handle("/matches/recent", viewMW(http.HandlerFunc(handlers.GetRecentFromDB)))
-	mux.Handle("/rules", viewMW(http.HandlerFunc(handlers.GetRules)))
 	mux.Handle("/metrics", viewMW(http.HandlerFunc(handlers.Metrics)))
 	mux.Handle("/metrics/performance", viewMW(http.HandlerFunc(handlers.GetPerformanceMetrics)))
 
-	// Routes that always require full authentication (modifications)
-	mux.Handle("/matches/clear", authMW(http.HandlerFunc(handlers.ClearMatches)))
-	mux.Handle("/rules/reload", authMW(http.HandlerFunc(handlers.ReloadRules)))
-	mux.Handle("/rules/create", authMW(http.HandlerFunc(handlers.CreateRule)))
-	mux.Handle("/rules/update/", authMW(http.HandlerFunc(handlers.UpdateRule)))
-	mux.Handle("/rules/delete/", authMW(http.HandlerFunc(handlers.DeleteRule)))
-	mux.Handle("/rules/toggle/", authMW(http.HandlerFunc(handlers.ToggleRule)))
-	mux.Handle("/auth/logout", authMW(http.HandlerFunc(handlers.Logout)))
+	// Form submission endpoints (always require authentication + CSRF protection)
+	mux.Handle("/matches/clear", authMW(csrfMW(http.HandlerFunc(handlers.ClearMatches))))
+	mux.Handle("/rules/reload", authMW(csrfMW(http.HandlerFunc(handlers.ReloadRulesForm))))
+	mux.Handle("/rules/create", authMW(csrfMW(http.HandlerFunc(handlers.CreateRuleForm))))
+	mux.Handle("/rules/update/", authMW(csrfMW(http.HandlerFunc(handlers.UpdateRuleForm))))
+	mux.Handle("/rules/delete/", authMW(csrfMW(http.HandlerFunc(handlers.DeleteRuleForm))))
+	mux.Handle("/rules/toggle/", authMW(csrfMW(http.HandlerFunc(handlers.ToggleRuleForm))))
+	mux.Handle("/auth/logout", authMW(csrfMW(http.HandlerFunc(handlers.Logout))))
 
 	port := os.Getenv("PORT")
 	if port == "" {

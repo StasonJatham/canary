@@ -1,0 +1,742 @@
+openapi: 3.0.3
+info:
+  title: Canary - Certificate Transparency Monitor
+  description: |
+    Real-time monitoring system for Certificate Transparency logs to detect suspicious domain certificates.
+
+    Canary monitors CT logs via Certspotter and alerts when certificates matching your rule-based watchlist are discovered.
+
+    ## Authentication
+    Most endpoints require authentication via session cookie. Login using `/auth/login` to obtain a session.
+    Sessions are valid for 30 days.
+  version: 1.0.0
+  contact:
+    name: Canary Project
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: http://your-domain:8080
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User authentication and session management
+  - name: Monitoring
+    description: Certificate monitoring and match retrieval
+  - name: Rules
+    description: Rule-based detection configuration
+  - name: System
+    description: System health and metrics
+
+paths:
+  # Authentication Endpoints
+  /login:
+    get:
+      tags:
+        - Authentication
+      summary: Login Page
+      description: Serves the login page HTML
+      responses:
+        '200':
+          description: HTML login page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User Login
+      description: Authenticates user and creates a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+              required:
+                - username
+                - password
+            example:
+              username: "admin"
+              password: "yourpassword"
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: string
+                    example: "true"
+          headers:
+            Set-Cookie:
+              description: Session cookie
+              schema:
+                type: string
+                example: "canary_session=token; Path=/; HttpOnly; Max-Age=2592000"
+        '400':
+          description: Invalid request
+        '401':
+          description: Invalid credentials
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: User Logout
+      description: Destroys the current session and clears the session cookie
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: string
+                    example: "true"
+
+  # Web UI Endpoints
+  /:
+    get:
+      tags:
+        - System
+      summary: Web UI Dashboard
+      description: Serves the interactive web dashboard for viewing matches
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: HTML dashboard page
+          content:
+            text/html:
+              schema:
+                type: string
+        '303':
+          description: Redirect to login if not authenticated
+
+  # Webhook Endpoint
+  /hook:
+    post:
+      tags:
+        - Monitoring
+      summary: Certspotter Webhook
+      description: Receives certificate discovery events from Certspotter (public endpoint)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: Certificate identifier
+                issuance:
+                  type: object
+                  properties:
+                    dns_names:
+                      type: array
+                      items:
+                        type: string
+                      description: DNS names in the certificate
+                    tbs_sha256:
+                      type: string
+                      description: SHA256 hash of TBS certificate
+                    cert_sha256:
+                      type: string
+                      description: SHA256 hash of certificate
+            example:
+              id: "abc123"
+              issuance:
+                dns_names:
+                  - "paypal-login.com"
+                  - "secure-paypal.net"
+                tbs_sha256: "49fe0fb3bc541f3b07c234b2058ed72e8d6ea14ebbd6b0ba5b94b500cbba6df3"
+                cert_sha256: "d876f3a0651ad7205de58bb659c8addbebab67a1657f113ee59d8275fe95654d"
+      responses:
+        '200':
+          description: Webhook processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  matches:
+                    type: integer
+                    description: Number of keyword matches found
+                    example: 2
+        '400':
+          description: Invalid request body
+        '405':
+          description: Method not allowed
+
+  # Match Endpoints
+  /matches:
+    get:
+      tags:
+        - Monitoring
+      summary: Get In-Memory Matches
+      description: Returns recent matches from the in-memory cache (real-time matches since server started)
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Match'
+
+  /matches/recent:
+    get:
+      tags:
+        - Monitoring
+      summary: Get Recent Matches from Database
+      description: Retrieves historical matches from the database within a specified time window with optional pagination
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: minutes
+          in: query
+          description: "Time window in minutes to look back (default: 5)"
+          required: false
+          schema:
+            type: integer
+            default: 5
+            example: 1440
+        - name: limit
+          in: query
+          description: "Maximum number of results to return (default: 50)"
+          required: false
+          schema:
+            type: integer
+            default: 50
+            example: 50
+        - name: offset
+          in: query
+          description: "Number of results to skip for pagination (default: 0)"
+          required: false
+          schema:
+            type: integer
+            default: 0
+            example: 0
+      responses:
+        '200':
+          description: Historical matches with optional pagination metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    description: Number of matches in this response
+                  total:
+                    type: integer
+                    description: Total number of matches (only included with pagination)
+                  limit:
+                    type: integer
+                    description: Limit used for pagination (only included with pagination)
+                  offset:
+                    type: integer
+                    description: Offset used for pagination (only included with pagination)
+                  has_more:
+                    type: boolean
+                    description: Whether more results are available (only included with pagination)
+                  matches:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Match'
+        '400':
+          description: Invalid minutes parameter
+
+  /matches/clear:
+    post:
+      tags:
+        - Monitoring
+      summary: Clear In-Memory Cache
+      description: Clears the in-memory matches cache (does not affect database)
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Cache cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "cleared"
+
+  # Rules Endpoints
+  /rules:
+    get:
+      tags:
+        - Rules
+      summary: Get All Rules
+      description: Returns all loaded rules with their configuration
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Rule'
+                  count:
+                    type: integer
+
+  /rules/create:
+    post:
+      tags:
+        - Rules
+      summary: Create New Rule
+      description: Creates a new detection rule and reloads the rule engine
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleInput'
+            example:
+              name: "paypal-phishing"
+              keywords: "paypal AND (login OR secure) NOT paypal.com"
+              priority: "high"
+              enabled: true
+              comment: "Detect PayPal phishing domains"
+      responses:
+        '200':
+          description: Rule created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "rule created"
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+        '409':
+          description: Rule with this name already exists
+        '500':
+          description: Failed to create or reload rule
+
+  /rules/update/{name}:
+    put:
+      tags:
+        - Rules
+      summary: Update Existing Rule
+      description: Updates an existing rule and reloads the rule engine
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the rule to update
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleInput'
+      responses:
+        '200':
+          description: Rule updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "rule updated"
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+        '404':
+          description: Rule not found
+        '500':
+          description: Failed to update or reload rule
+
+  /rules/delete/{name}:
+    delete:
+      tags:
+        - Rules
+      summary: Delete Rule
+      description: Deletes a rule and reloads the rule engine
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the rule to delete
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rule deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "rule deleted"
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+        '404':
+          description: Rule not found
+        '500':
+          description: Failed to delete or reload rule
+
+  /rules/toggle/{name}:
+    put:
+      tags:
+        - Rules
+      summary: Toggle Rule Status
+      description: Enables or disables a rule and reloads the rule engine
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the rule to toggle
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rule toggled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "rule toggled"
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+        '404':
+          description: Rule not found
+        '500':
+          description: Failed to toggle or reload rule
+
+  /rules/reload:
+    post:
+      tags:
+        - Rules
+      summary: Reload Rules from File
+      description: Reloads all rules from the rules.yaml file
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Rules reloaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "rules reloaded"
+                  rules_loaded:
+                    type: integer
+                  enabled_rules:
+                    type: integer
+        '500':
+          description: Failed to reload rules
+
+  # Metrics Endpoints
+  /metrics:
+    get:
+      tags:
+        - System
+      summary: System Metrics
+      description: Returns system metrics and statistics
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: System metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queue_len:
+                    type: integer
+                    description: Current match queue length
+                  total_matches:
+                    type: integer
+                    description: Total matches since server start
+                  total_certs:
+                    type: integer
+                    description: Total certificates processed
+                  watched_domains:
+                    type: integer
+                    description: Number of keywords extracted from rules
+                  rules_count:
+                    type: integer
+                    description: Total number of rules loaded
+                  uptime_seconds:
+                    type: integer
+                    description: Server uptime in seconds
+                  recent_matches:
+                    type: integer
+                    description: Matches in memory cache
+              example:
+                queue_len: 0
+                total_matches: 42
+                total_certs: 150
+                watched_domains: 37
+                rules_count: 5
+                uptime_seconds: 3600
+                recent_matches: 10
+
+  /metrics/performance:
+    get:
+      tags:
+        - System
+      summary: Performance Metrics
+      description: Returns detailed performance metrics including CPU, memory, and processing statistics
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: minutes
+          in: query
+          description: "Time window for historical metrics (default: 60)"
+          required: false
+          schema:
+            type: integer
+            default: 60
+      responses:
+        '200':
+          description: Performance metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current:
+                    $ref: '#/components/schemas/PerformanceMetrics'
+                  historical:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PerformanceMetrics'
+
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health Check
+      description: Checks system health including database and rule engine status
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  keywords:
+                    type: integer
+                    description: Number of loaded keywords
+                  rules:
+                    type: integer
+                    description: Number of loaded rules
+                  uptime:
+                    type: integer
+                    description: Server uptime in seconds
+        '503':
+          description: System is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "unhealthy"
+                  error:
+                    type: string
+                    example: "database unreachable"
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: canary_session
+      description: Session cookie obtained from /auth/login
+
+  schemas:
+    Match:
+      type: object
+      description: A certificate that matched one or more rules from the watchlist
+      properties:
+        dns_names:
+          type: array
+          items:
+            type: string
+          description: All DNS names in the certificate
+          example:
+            - "paypal-secure.com"
+            - "login.paypal-secure.com"
+        matched_domains:
+          type: array
+          items:
+            type: string
+          description: Keywords that matched this certificate
+          example:
+            - "paypal"
+        matched_rule:
+          type: string
+          description: Name of the rule that triggered this match
+          example: "paypal-phishing"
+        priority:
+          type: string
+          description: Priority level of the matched rule
+          enum: [critical, high, medium, low]
+          example: "high"
+        tbs_sha256:
+          type: string
+          description: SHA256 hash of the TBS (To Be Signed) certificate
+          example: "49fe0fb3bc541f3b07c234b2058ed72e8d6ea14ebbd6b0ba5b94b500cbba6df3"
+        cert_sha256:
+          type: string
+          description: SHA256 hash of the certificate
+          example: "d876f3a0651ad7205de58bb659c8addbebab67a1657f113ee59d8275fe95654d"
+        detected_at:
+          type: string
+          format: date-time
+          description: Timestamp when the match was detected
+          example: "2025-11-07T08:30:00Z"
+
+    Rule:
+      type: object
+      description: A detection rule configuration
+      properties:
+        name:
+          type: string
+          description: Unique rule name
+          example: "paypal-phishing"
+        keywords:
+          type: string
+          description: Boolean expression for keyword matching
+          example: "paypal AND (login OR secure) NOT paypal.com"
+        priority:
+          type: string
+          description: Rule priority level
+          enum: [critical, high, medium, low]
+          example: "high"
+        enabled:
+          type: boolean
+          description: Whether the rule is active
+          example: true
+        order:
+          type: integer
+          description: Rule evaluation order (lower = higher priority)
+          example: 1
+        comment:
+          type: string
+          description: Optional description or notes
+          example: "Detect PayPal phishing domains"
+
+    RuleInput:
+      type: object
+      description: Input schema for creating or updating a rule
+      required:
+        - name
+        - keywords
+        - priority
+        - enabled
+      properties:
+        name:
+          type: string
+          description: Unique rule name
+        keywords:
+          type: string
+          description: Boolean expression for keyword matching (supports AND, OR, NOT)
+        priority:
+          type: string
+          enum: [critical, high, medium, low]
+          description: Rule priority level
+        enabled:
+          type: boolean
+          description: Whether the rule is active
+        comment:
+          type: string
+          description: Optional description or notes
+
+    PerformanceMetrics:
+      type: object
+      description: System performance metrics
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        certs_per_minute:
+          type: number
+          description: Certificates processed per minute
+        matches_per_minute:
+          type: number
+          description: Matches detected per minute
+        avg_match_time_us:
+          type: integer
+          description: Average matching time in microseconds
+        cpu_percent:
+          type: number
+          description: CPU usage percentage
+        memory_used_mb:
+          type: number
+          description: Memory usage in megabytes
+        goroutine_count:
+          type: integer
+          description: Number of active goroutines

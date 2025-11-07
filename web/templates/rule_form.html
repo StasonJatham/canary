@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Canary CT Monitor - {{if .Rule}}Edit{{else}}Create{{end}} Rule">
+    <title>{{if .Rule}}Edit{{else}}Create{{end}} Rule - Canary CT Monitor</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- Shadcn Theme -->
+    <link rel="stylesheet" href="/theme.css">
+
+    <link rel="icon" type="image/jpeg" href="/canary.jpg">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg sticky-top border-bottom">
+        <div class="container-fluid">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <img src="/canary.jpg" alt="Canary" width="32" height="32" class="me-2">
+                <span class="fw-bold">Canary CT Monitor</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">
+                            <i class="bi bi-speedometer2 me-1"></i>Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/rules">
+                            <i class="bi bi-list-check me-1"></i>Rules
+                        </a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center gap-3">
+                    <span class="badge bg-success">
+                        <i class="bi bi-check-circle me-1"></i>Online
+                    </span>
+                    <button class="btn btn-sm btn-outline-secondary" id="themeToggle" title="Toggle theme">
+                        <i class="bi bi-moon-fill"></i>
+                    </button>
+                    <form action="/auth/logout" method="POST" style="display: inline;">
+                        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Logout">
+                            <i class="bi bi-box-arrow-right"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container py-4">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="d-flex align-items-center mb-4">
+                    <a href="/rules" class="btn btn-outline-secondary me-3">
+                        <i class="bi bi-arrow-left"></i>
+                    </a>
+                    <div>
+                        <h2 class="mb-0">{{if .Rule}}Edit Rule{{else}}Create New Rule{{end}}</h2>
+                        <p class="text-muted mb-0">{{if .Rule}}Modify an existing detection rule{{else}}Add a new detection rule{{end}}</p>
+                    </div>
+                </div>
+
+                {{if .Error}}
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    {{.Error}}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {{end}}
+
+                <div class="card border">
+                    <div class="card-body">
+                        <form action="{{if .Rule}}/rules/update/{{.Rule.Name}}{{else}}/rules/create{{end}}" method="POST">
+                            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Rule Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="name" name="name"
+                                       value="{{if .Rule}}{{.Rule.Name}}{{end}}"
+                                       {{if .Rule}}readonly{{else}}required{{end}}
+                                       placeholder="e.g., paypal_phish">
+                                <small class="text-muted">Unique identifier for this rule (lowercase, no spaces){{if .Rule}} - cannot be changed{{end}}</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="keywords" class="form-label">Boolean Expression <span class="text-danger">*</span></label>
+                                <textarea class="form-control font-monospace" id="keywords" name="keywords" rows="3" required
+                                          placeholder="e.g., (paypal OR stripe) AND login AND NOT (paypal.com OR stripe.com)">{{if .Rule}}{{.Rule.Keywords}}{{end}}</textarea>
+                                <small class="text-muted">Use AND, OR, NOT operators with parentheses for grouping</small>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="priority" class="form-label">Priority <span class="text-danger">*</span></label>
+                                        <select class="form-select" id="priority" name="priority" required>
+                                            <option value="critical" {{if .Rule}}{{if eq .Rule.Priority "critical"}}selected{{end}}{{end}}>Critical</option>
+                                            <option value="high" {{if .Rule}}{{if eq .Rule.Priority "high"}}selected{{end}}{{else}}selected{{end}}>High</option>
+                                            <option value="medium" {{if .Rule}}{{if eq .Rule.Priority "medium"}}selected{{end}}{{end}}>Medium</option>
+                                            <option value="low" {{if .Rule}}{{if eq .Rule.Priority "low"}}selected{{end}}{{end}}>Low</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="enabled" class="form-label">Status</label>
+                                        <select class="form-select" id="enabled" name="enabled">
+                                            <option value="true" {{if .Rule}}{{if .Rule.Enabled}}selected{{end}}{{else}}selected{{end}}>Enabled</option>
+                                            <option value="false" {{if .Rule}}{{if not .Rule.Enabled}}selected{{end}}{{end}}>Disabled</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="comment" class="form-label">Description</label>
+                                <textarea class="form-control" id="comment" name="comment" rows="2"
+                                          placeholder="Brief description of what this rule detects">{{if .Rule}}{{.Rule.Comment}}{{end}}</textarea>
+                            </div>
+
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                <strong>Validation:</strong> The expression will be validated before saving. Ensure all keywords are lowercase.
+                            </div>
+
+                            <div class="d-flex justify-content-between">
+                                <a href="/rules" class="btn btn-secondary">Cancel</a>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-check-lg me-1"></i>{{if .Rule}}Update{{else}}Create{{end}} Rule
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Theme toggle
+        const themeToggle = document.getElementById('themeToggle');
+        const html = document.documentElement;
+
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        html.setAttribute('data-bs-theme', savedTheme);
+        updateThemeIcon(savedTheme);
+
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = html.getAttribute('data-bs-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            html.setAttribute('data-bs-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        });
+
+        function updateThemeIcon(theme) {
+            const icon = document.querySelector('#themeToggle i');
+            icon.className = theme === 'light' ? 'bi bi-moon-fill' : 'bi bi-sun-fill';
+        }
+    </script>
+</body>
+</html>

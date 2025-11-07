@@ -19,7 +19,7 @@
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg sticky-top border-bottom">
         <div class="container-fluid">
-            <a class="navbar-brand d-flex align-items-center" href="/dashboard.html">
+            <a class="navbar-brand d-flex align-items-center" href="/">
                 <img src="/canary.jpg" alt="Canary" width="32" height="32" class="me-2">
                 <span class="fw-bold">Canary CT Monitor</span>
             </a>
@@ -29,26 +29,29 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="/dashboard.html">
+                        <a class="nav-link" href="/">
                             <i class="bi bi-speedometer2 me-1"></i>Dashboard
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="/rules.html">
+                        <a class="nav-link active" href="/rules">
                             <i class="bi bi-list-check me-1"></i>Rules
                         </a>
                     </li>
                 </ul>
                 <div class="d-flex align-items-center gap-3">
-                    <span class="badge bg-success" id="statusBadge">
+                    <span class="badge bg-success">
                         <i class="bi bi-check-circle me-1"></i>Online
                     </span>
                     <button class="btn btn-sm btn-outline-secondary" id="themeToggle" title="Toggle theme">
                         <i class="bi bi-moon-fill"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-danger" id="logoutBtn" title="Logout">
-                        <i class="bi bi-box-arrow-right"></i>
-                    </button>
+                    <form action="/auth/logout" method="POST" style="display: inline;">
+                        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Logout">
+                            <i class="bi bi-box-arrow-right"></i>
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -56,15 +59,24 @@
 
     <!-- Main Content -->
     <main class="container-fluid py-4">
+        {{if .Message}}
+        <div class="alert alert-{{.MessageType}} alert-dismissible fade show" role="alert">
+            {{.Message}}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {{end}}
+
         <!-- Page Header -->
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
                 <h2 class="mb-1">Detection Rules</h2>
                 <p class="text-muted mb-0">Manage boolean expression rules for certificate monitoring</p>
             </div>
-            <button class="btn btn-primary" id="addRuleBtn" style="display: none;">
+            {{if .CanEdit}}
+            <a href="/rules/new" class="btn btn-primary">
                 <i class="bi bi-plus-lg me-1"></i>Add Rule
-            </button>
+            </a>
+            {{end}}
         </div>
 
         <!-- Rules Table -->
@@ -72,11 +84,16 @@
             <div class="card-header d-flex justify-content-between align-items-center">
                 <div>
                     <h5 class="mb-0">Active Rules</h5>
-                    <small class="text-muted"><span id="rulesCount">0</span> rules loaded</small>
+                    <small class="text-muted">{{len .Rules}} rules loaded</small>
                 </div>
-                <button class="btn btn-sm btn-outline-secondary" id="reloadRulesBtn" style="display: none;">
-                    <i class="bi bi-arrow-clockwise me-1"></i>Reload from YAML
-                </button>
+                {{if .CanEdit}}
+                <form action="/rules/reload" method="POST" style="display: inline;">
+                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Reload from YAML
+                    </button>
+                </form>
+                {{end}}
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -88,18 +105,67 @@
                                 <th>Expression</th>
                                 <th style="width: 100px;">Priority</th>
                                 <th style="width: 120px;">Order</th>
+                                {{if .CanEdit}}
                                 <th style="width: 150px;">Actions</th>
+                                {{end}}
                             </tr>
                         </thead>
-                        <tbody id="rulesTableBody">
+                        <tbody>
+                            {{if eq (len .Rules) 0}}
                             <tr>
-                                <td colspan="6" class="text-center text-muted py-5">
-                                    <div class="spinner-border text-primary mb-2" role="status">
-                                        <span class="visually-hidden">Loading...</span>
-                                    </div>
-                                    <div>Loading rules...</div>
+                                <td colspan="{{if .CanEdit}}6{{else}}5{{end}}" class="text-center text-muted py-5">
+                                    <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                    No rules found. {{if .CanEdit}}Click "Add Rule" to create one.{{end}}
                                 </td>
                             </tr>
+                            {{else}}
+                            {{range .Rules}}
+                            <tr>
+                                <td class="text-center">
+                                    {{if .Enabled}}
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                    {{else}}
+                                    <i class="bi bi-x-circle-fill text-muted"></i>
+                                    {{end}}
+                                </td>
+                                <td>
+                                    <div class="fw-semibold">{{.Name}}</div>
+                                    {{if .Comment}}<small class="text-muted">{{.Comment}}</small>{{end}}
+                                </td>
+                                <td>
+                                    <code class="small">{{.Keywords}}</code>
+                                </td>
+                                <td>
+                                    <span class="badge bg-{{if eq .Priority "critical"}}danger{{else if eq .Priority "high"}}warning{{else if eq .Priority "medium"}}info{{else}}secondary{{end}}">{{.Priority}}</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge bg-secondary">{{.Order}}</span>
+                                </td>
+                                {{if $.CanEdit}}
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <form action="/rules/toggle/{{.Name}}" method="POST" style="display: inline;">
+                                            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                                            <button type="submit" class="btn btn-outline-secondary" title="{{if .Enabled}}Disable{{else}}Enable{{end}}">
+                                                <i class="bi {{if .Enabled}}bi-pause{{else}}bi-play{{end}}"></i>
+                                            </button>
+                                        </form>
+                                        <a href="/rules/edit/{{.Name}}" class="btn btn-outline-primary" title="Edit">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <button type="button" class="btn btn-outline-danger" title="Delete"
+                                                onclick="if(confirm('Are you sure you want to delete rule {{.Name}}?')) { document.getElementById('delete-{{.Name}}').submit(); }">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                        <form id="delete-{{.Name}}" action="/rules/delete/{{.Name}}" method="POST" style="display: none;">
+                                            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                                        </form>
+                                    </div>
+                                </td>
+                                {{end}}
+                            </tr>
+                            {{end}}
+                            {{end}}
                         </tbody>
                     </table>
                 </div>
@@ -166,100 +232,29 @@
         </div>
     </main>
 
-    <!-- Add/Edit Rule Modal -->
-    <div class="modal fade" id="ruleModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="ruleModalTitle">Add Rule</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <form id="ruleForm">
-                    <div class="modal-body">
-                        <div class="mb-3">
-                            <label for="ruleName" class="form-label">Rule Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="ruleName" required
-                                   placeholder="e.g., paypal_phish">
-                            <small class="text-muted">Unique identifier for this rule (lowercase, no spaces)</small>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="ruleExpression" class="form-label">Boolean Expression <span class="text-danger">*</span></label>
-                            <textarea class="form-control font-monospace" id="ruleExpression" rows="3" required
-                                      placeholder="e.g., (paypal OR stripe) AND login AND NOT (paypal.com OR stripe.com)"></textarea>
-                            <small class="text-muted">Use AND, OR, NOT operators with parentheses for grouping</small>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="rulePriority" class="form-label">Priority <span class="text-danger">*</span></label>
-                                    <select class="form-select" id="rulePriority" required>
-                                        <option value="critical">Critical</option>
-                                        <option value="high" selected>High</option>
-                                        <option value="medium">Medium</option>
-                                        <option value="low">Low</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="ruleEnabled" class="form-label">Status</label>
-                                    <select class="form-select" id="ruleEnabled">
-                                        <option value="true" selected>Enabled</option>
-                                        <option value="false">Disabled</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="ruleComment" class="form-label">Description</label>
-                            <textarea class="form-control" id="ruleComment" rows="2"
-                                      placeholder="Brief description of what this rule detects"></textarea>
-                        </div>
-
-                        <div class="alert alert-warning mb-0">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            <strong>Validation:</strong> The expression will be validated before saving. Ensure all keywords are lowercase.
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="saveRuleBtn">
-                            <i class="bi bi-check-lg me-1"></i>Save Rule
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- Delete Confirmation Modal -->
-    <div class="modal fade" id="deleteModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Confirm Delete</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="mb-0">Are you sure you want to delete the rule <strong id="deleteRuleName"></strong>?</p>
-                    <p class="text-muted small mb-0 mt-2">This action cannot be undone.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
-                        <i class="bi bi-trash me-1"></i>Delete
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Rules JS -->
-    <script src="/js/rules.js"></script>
+    <script>
+        // Theme toggle
+        const themeToggle = document.getElementById('themeToggle');
+        const html = document.documentElement;
+
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        html.setAttribute('data-bs-theme', savedTheme);
+        updateThemeIcon(savedTheme);
+
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = html.getAttribute('data-bs-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            html.setAttribute('data-bs-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        });
+
+        function updateThemeIcon(theme) {
+            const icon = document.querySelector('#themeToggle i');
+            icon.className = theme === 'light' ? 'bi bi-moon-fill' : 'bi bi-sun-fill';
+        }
+    </script>
 </body>
 </html>
