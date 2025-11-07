@@ -11,6 +11,15 @@ class Dashboard {
         this.init();
     }
 
+    // Single ordering function - always sort by newest timestamp first
+    sortByNewestFirst(matches) {
+        return matches.sort((a, b) => {
+            const dateA = new Date(a.detected_at);
+            const dateB = new Date(b.detected_at);
+            return dateB - dateA; // Descending order (newest first)
+        });
+    }
+
     async init() {
         await this.checkPublicMode();
         this.setupEventListeners();
@@ -153,12 +162,8 @@ class Dashboard {
             const data = await response.json();
             this.matches = data.matches || [];
 
-            // Sort matches by detected_at in descending order (newest first)
-            this.matches.sort((a, b) => {
-                const dateA = new Date(a.detected_at);
-                const dateB = new Date(b.detected_at);
-                return dateB - dateA;
-            });
+            // Always sort by newest first using the single ordering function
+            this.sortByNewestFirst(this.matches);
 
             this.filterMatches();
             this.loadMetrics(); // Refresh metrics too
@@ -182,12 +187,8 @@ class Dashboard {
             return matchesSearch && matchesPriority;
         });
 
-        // Ensure filtered results are sorted by newest first
-        this.filteredMatches.sort((a, b) => {
-            const dateA = new Date(a.detected_at);
-            const dateB = new Date(b.detected_at);
-            return dateB - dateA;
-        });
+        // Always sort by newest first using the single ordering function
+        this.sortByNewestFirst(this.filteredMatches);
 
         this.currentPage = 0;
         this.renderMatches();
@@ -351,11 +352,11 @@ class Dashboard {
     }
 
     startAutoRefresh() {
-        // Refresh every 30 seconds
+        // Refresh every 20 seconds
         this.refreshInterval = setInterval(() => {
             this.loadMatches();
             this.loadPerformanceMetrics();
-        }, 30000);
+        }, 20000);
     }
 
     showToast(message, type = 'info') {
