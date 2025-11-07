@@ -22,12 +22,16 @@ class Dashboard {
     }
 
     async init() {
+        // Wait for auth check to complete before loading data
         await this.checkPublicMode();
+
         this.setupEventListeners();
         this.setupThemeToggle();
-        this.loadMetrics();
-        this.loadMatches();
-        this.loadPerformanceMetrics();
+
+        // Now load data with correct auth state
+        await this.loadMetrics();
+        await this.loadMatches();
+        await this.loadPerformanceMetrics();
         this.startAutoRefresh();
     }
 

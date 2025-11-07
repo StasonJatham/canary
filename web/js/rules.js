@@ -12,13 +12,17 @@ class RulesManager {
     }
 
     async init() {
+        // Wait for auth check to complete before loading rules
         await this.checkPublicMode();
+
         this.ruleModal = new bootstrap.Modal(document.getElementById('ruleModal'));
         this.deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
 
         this.setupEventListeners();
         this.setupThemeToggle();
-        this.loadRules();
+
+        // Now load rules with correct auth state
+        await this.loadRules();
     }
 
     async checkPublicMode() {
