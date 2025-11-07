@@ -43,8 +43,27 @@ func main() {
 	config.MatchChan = make(chan models.Match, 10000)
 	database.StartWorkers(4, 200, 200*time.Millisecond)
 
+	// CORS middleware
+	corsMiddleware := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+
 	// Setup HTTP routes
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", handlers.ServeUI)
+	mux.HandleFunc("/docs", handlers.ServeAPIDocs)
+	mux.HandleFunc("/openapi.yaml", handlers.ServeOpenAPISpec)
 	mux.HandleFunc("/hook", handlers.Hook)
 	mux.HandleFunc("/matches", handlers.GetMatches)
 	mux.HandleFunc("/matches/clear", handlers.ClearMatches)
@@ -59,9 +78,15 @@ func main() {
 		port = "8080"
 	}
 
+	// Enable debug mode if DEBUG=true
+	if os.Getenv("DEBUG") == "true" {
+		config.Debug = true
+		log.Println("DEBUG mode enabled - will log all incoming webhook payloads")
+	}
+
 	srv := &http.Server{
 		Addr:         ":" + port,
-		Handler:      mux,
+		Handler:      corsMiddleware(mux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
@@ -88,6 +113,8 @@ func main() {
 
 	log.Printf("Starting Canary CT Monitor on port %s", port)
 	log.Printf("Endpoints:")
+	log.Printf("  GET  /                  - Web UI Dashboard")
+	log.Printf("  GET  /docs              - API Documentation (ReDoc)")
 	log.Printf("  POST /hook              - Accept Certspotter webhooks")
 	log.Printf("  GET  /matches           - Get recent matches from memory")
 	log.Printf("  GET  /matches/recent    - Get matches from DB (param: minutes)")

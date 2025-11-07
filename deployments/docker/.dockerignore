@@ -1,0 +1,8 @@
+.git
+.gitignore
+*.md
+docs/
+.DS_Store
+*.db
+*.db-journal
+deployments/

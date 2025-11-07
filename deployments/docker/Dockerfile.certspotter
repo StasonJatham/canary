@@ -1,0 +1,33 @@
+# Certspotter Dockerfile - Custom lightweight build
+FROM golang:1.25-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git gcc musl-dev
+
+# Build certspotter from source
+WORKDIR /build
+RUN git clone https://github.com/SSLMate/certspotter.git && \
+    cd certspotter && \
+    go build -o /usr/local/bin/certspotter ./cmd/certspotter
+
+# Runtime stage
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates curl jq
+
+# Copy binary from builder
+COPY --from=builder /usr/local/bin/certspotter /usr/local/bin/certspotter
+
+# Create working directory
+WORKDIR /var/lib/certspotter
+RUN mkdir -p /var/lib/certspotter
+
+# Copy watchlist, webhook script, and loop wrapper
+COPY scripts/watchlist.txt /watchlist.txt
+COPY scripts/certspotter-docker-webhook.sh /webhook.sh
+COPY scripts/certspotter-loop.sh /certspotter-loop.sh
+RUN chmod +x /webhook.sh /certspotter-loop.sh
+
+# Run certspotter continuously in a loop
+ENTRYPOINT ["/certspotter-loop.sh"]

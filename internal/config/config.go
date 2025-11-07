@@ -24,6 +24,9 @@ var (
 
 	MaxRecentMatches = 500
 
+	// Debug mode - logs incoming webhook payloads
+	Debug bool
+
 	// Statistics
 	TotalMatches atomic.Int64
 	TotalCerts   atomic.Int64

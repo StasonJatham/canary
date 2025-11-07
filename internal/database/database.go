@@ -201,7 +201,152 @@ func GetRecent(since time.Time) ([]models.Match, error) {
 				continue
 			}
 			_ = json.Unmarshal([]byte(domainsJSON), &m.Domains)
-			parsed, _ := time.Parse("2006-01-02 15:04:05", ts)
+
+			// Try multiple timestamp formats
+			parsed, err := time.Parse("2006-01-02 15:04:05", ts)
+			if err != nil {
+				parsed, err = time.Parse(time.RFC3339, ts)
+			}
+			if err != nil {
+				parsed, err = time.Parse("2006-01-02T15:04:05Z", ts)
+			}
+			if err != nil {
+				// If all parsing fails, use current time
+				parsed = time.Now()
+			}
+			m.Timestamp = parsed
+			all = append(all, m)
+		}
+		rows.Close()
+	}
+
+	return all, nil
+}
+
+// GetRecentPaginated retrieves matches with pagination support using UNION ALL for efficiency
+func GetRecentPaginated(since time.Time, limit, offset int) ([]models.Match, int, error) {
+	// Build UNION ALL query for all partition tables
+	var countQueries []string
+	var dataQueries []string
+
+	for _, tbl := range config.PartitionTables {
+		countQueries = append(countQueries, fmt.Sprintf("SELECT COUNT(DISTINCT cert_id) FROM %s WHERE timestamp >= ?", tbl))
+		dataQueries = append(dataQueries, fmt.Sprintf(
+			"SELECT cert_id, keyword, domains, tbs_sha256, cert_sha256, MAX(timestamp) as timestamp FROM %s WHERE timestamp >= ? GROUP BY cert_id",
+			tbl,
+		))
+	}
+
+	// Get total unique certificates count by summing from all partitions
+	totalCount := 0
+	for _, tbl := range config.PartitionTables {
+		var count int
+		query := fmt.Sprintf("SELECT COUNT(DISTINCT cert_id) FROM %s WHERE timestamp >= ?", tbl)
+		if err := config.DB.QueryRow(query, since).Scan(&count); err != nil {
+			log.Printf("Error counting from %s: %v", tbl, err)
+			continue
+		}
+		totalCount += count
+	}
+
+	// Build unified query with LIMIT and OFFSET - order by cert_id as secondary for consistency
+	unionQuery := fmt.Sprintf(
+		"SELECT cert_id, keyword, domains, tbs_sha256, cert_sha256, timestamp FROM (%s) ORDER BY timestamp DESC, cert_id ASC LIMIT ? OFFSET ?",
+		strings.Join(dataQueries, " UNION ALL "),
+	)
+
+	// Prepare arguments: one 'since' for each table, then limit and offset
+	args := make([]interface{}, len(config.PartitionTables)+2)
+	for i := range config.PartitionTables {
+		args[i] = since
+	}
+	args[len(config.PartitionTables)] = limit
+	args[len(config.PartitionTables)+1] = offset
+
+	rows, err := config.DB.Query(unionQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query paginated: %w", err)
+	}
+	defer rows.Close()
+
+	all := make([]models.Match, 0, limit)
+	for rows.Next() {
+		var m models.Match
+		var domainsJSON string
+		var ts string
+		if err := rows.Scan(&m.CertID, &m.Keyword, &domainsJSON, &m.TbsSha256, &m.CertSha256, &ts); err != nil {
+			continue
+		}
+		_ = json.Unmarshal([]byte(domainsJSON), &m.Domains)
+
+		// Try multiple timestamp formats
+		parsed, err := time.Parse("2006-01-02 15:04:05", ts)
+		if err != nil {
+			parsed, err = time.Parse(time.RFC3339, ts)
+		}
+		if err != nil {
+			parsed, err = time.Parse("2006-01-02T15:04:05Z", ts)
+		}
+		if err != nil {
+			parsed = time.Now()
+		}
+		m.Timestamp = parsed
+		all = append(all, m)
+	}
+
+	return all, totalCount, nil
+}
+
+// GetMatchesByCertIDs retrieves all matches for specific certificate IDs
+func GetMatchesByCertIDs(certIDs []string) ([]models.Match, error) {
+	if len(certIDs) == 0 {
+		return nil, nil
+	}
+
+	all := make([]models.Match, 0, len(certIDs)*2) // Estimate 2 keywords per cert
+
+	// Build placeholders for IN clause
+	placeholders := make([]string, len(certIDs))
+	args := make([]interface{}, len(certIDs))
+	for i, id := range certIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	inClause := strings.Join(placeholders, ",")
+
+	// Query each partition table
+	for _, tbl := range config.PartitionTables {
+		query := fmt.Sprintf(
+			`SELECT cert_id, keyword, domains, tbs_sha256, cert_sha256, timestamp FROM %s WHERE cert_id IN (%s)`,
+			tbl, inClause,
+		)
+
+		rows, err := config.DB.Query(query, args...)
+		if err != nil {
+			log.Printf("query cert_ids from %s: %v", tbl, err)
+			continue
+		}
+
+		for rows.Next() {
+			var m models.Match
+			var domainsJSON string
+			var ts string
+			if err := rows.Scan(&m.CertID, &m.Keyword, &domainsJSON, &m.TbsSha256, &m.CertSha256, &ts); err != nil {
+				continue
+			}
+			_ = json.Unmarshal([]byte(domainsJSON), &m.Domains)
+
+			// Try multiple timestamp formats
+			parsed, err := time.Parse("2006-01-02 15:04:05", ts)
+			if err != nil {
+				parsed, err = time.Parse(time.RFC3339, ts)
+			}
+			if err != nil {
+				parsed, err = time.Parse("2006-01-02T15:04:05Z", ts)
+			}
+			if err != nil {
+				parsed = time.Now()
+			}
 			m.Timestamp = parsed
 			all = append(all, m)
 		}

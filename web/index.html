@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canary - Certificate Monitoring</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-tertiary: #e9ecef;
+            --text-primary: #000000;
+            --text-secondary: #6c757d;
+            --border: #dee2e6;
+            --danger: #dc3545;
+            --success: #198754;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .container-fluid {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        .header {
+            background-color: var(--bg-primary);
+            border-bottom: 1px solid var(--border);
+            padding: 1.5rem 0;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            letter-spacing: -0.025em;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            transition: box-shadow 0.2s;
+        }
+
+        .stat-card:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        .search-box {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .search-box input {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.625rem 1rem;
+            font-size: 0.9375rem;
+            transition: border-color 0.2s;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--text-primary);
+            box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .matches-container {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .match-item {
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--border);
+            transition: background-color 0.15s;
+        }
+
+        .match-item:last-child {
+            border-bottom: none;
+        }
+
+        .match-item:hover {
+            background-color: var(--bg-secondary);
+        }
+
+        .match-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 0.75rem;
+        }
+
+        .domain-name {
+            font-size: 1rem;
+            font-weight: 600;
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+        }
+
+        .match-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+        .badge-danger {
+            background-color: rgba(220, 53, 69, 0.1);
+            color: var(--danger);
+        }
+
+        .match-details {
+            display: grid;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .detail-row {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .detail-label {
+            color: var(--text-secondary);
+            font-weight: 500;
+            min-width: 100px;
+        }
+
+        .detail-value {
+            color: var(--text-primary);
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            word-break: break-all;
+        }
+
+        .timestamp {
+            color: var(--text-secondary);
+            font-size: 0.8125rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            border: 3px solid var(--bg-tertiary);
+            border-top: 3px solid var(--text-primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.3;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container-fluid">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1>Canary Monitor</h1>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-label">Total Certificates</div>
+                <div class="stat-value" id="totalMatches">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Loaded</div>
+                <div class="stat-value" id="loadedCount">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Watched Keywords</div>
+                <div class="stat-value" id="watchedDomains">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Status</div>
+                <div class="stat-value" id="cacheStatus">Starting</div>
+            </div>
+        </div>
+
+        <div class="search-box">
+            <input
+                type="text"
+                class="form-control"
+                id="searchInput"
+                placeholder="Search domains, certificates, or patterns..."
+                onkeyup="app.handleSearch()"
+            >
+        </div>
+
+        <div class="matches-container" id="matchesContainer">
+            <div class="loading">
+                <div class="spinner"></div>
+                <div>Loading matches...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const app = {
+            allMatches: [],
+            displayedMatches: [],
+            filteredMatches: [],
+            offset: 0,
+            limit: 50,
+            hasMore: true,
+            isLoading: false,
+            searchQuery: '',
+            metrics: {},
+            totalMatchesFromDB: 0,
+
+            apiBase: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+                ? 'http://localhost:8080'
+                : '',
+
+            async fetchPage(offset, limit) {
+                console.log(`Fetching page: offset=${offset}, limit=${limit}`);
+                try {
+                    const res = await fetch(`${this.apiBase}/matches/recent?minutes=1440&limit=${limit}&offset=${offset}`);
+
+                    if (!res.ok) {
+                        throw new Error(`API error: ${res.status}`);
+                    }
+
+                    const data = await res.json();
+
+                    // Update total count from API
+                    if (data.total !== undefined) {
+                        this.totalMatchesFromDB = data.total;
+                    }
+
+                    return {
+                        matches: data.matches || [],
+                        hasMore: data.has_more || false,
+                        total: data.total || 0
+                    };
+                } catch (error) {
+                    console.error('Fetch error:', error);
+                    throw error;
+                }
+            },
+
+            async fetchMetrics() {
+                try {
+                    const res = await fetch(`${this.apiBase}/metrics`);
+                    if (res.ok) {
+                        this.metrics = await res.json();
+                        this.updateStats();
+                    }
+                } catch (error) {
+                    console.error('Metrics fetch error:', error);
+                }
+            },
+
+            updateStats() {
+                // Show total unique certificates from database
+                const displayTotal = this.totalMatchesFromDB > 0 ? this.totalMatchesFromDB : this.allMatches.length;
+                document.getElementById('totalMatches').textContent = displayTotal.toLocaleString();
+
+                // Show how many are currently loaded in browser
+                document.getElementById('loadedCount').textContent = this.allMatches.length.toLocaleString();
+
+                // Show watched keywords count
+                document.getElementById('watchedDomains').textContent = this.metrics.watched_domains || 0;
+
+                // Show status
+                if (this.allMatches.length === 0) {
+                    document.getElementById('cacheStatus').textContent = 'Loading...';
+                } else if (this.hasMore) {
+                    document.getElementById('cacheStatus').textContent = 'Active';
+                } else {
+                    document.getElementById('cacheStatus').textContent = 'Complete';
+                }
+            },
+
+            async loadInitialData() {
+                try {
+                    this.offset = 0;
+                    this.allMatches = [];
+                    this.displayedMatches = [];
+
+                    await this.loadMore();
+                    await this.fetchMetrics();
+                } catch (error) {
+                    console.error('Error loading data:', error);
+                    document.getElementById('matchesContainer').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⚠️</div>
+                            <h3>Failed to load data</h3>
+                            <p>Unable to connect to the Canary API. Make sure the service is running.</p>
+                        </div>
+                    `;
+                }
+            },
+
+            async loadMore() {
+                if (this.isLoading || !this.hasMore) return;
+
+                this.isLoading = true;
+                this.showLoading();
+
+                try {
+                    const { matches, hasMore } = await this.fetchPage(this.offset, this.limit);
+
+                    this.allMatches.push(...matches);
+                    this.hasMore = hasMore;
+                    this.offset += matches.length;
+
+                    this.applySearch();
+                } catch (error) {
+                    console.error('Load more error:', error);
+                } finally {
+                    this.isLoading = false;
+                }
+            },
+
+            highlightKeywords(text, keywords) {
+                let highlighted = text;
+                keywords.forEach(keyword => {
+                    const regex = new RegExp(`(${keyword})`, 'gi');
+                    highlighted = highlighted.replace(regex, '<mark style="background-color: #ffeb3b; font-weight: 600;">$1</mark>');
+                });
+                return highlighted;
+            },
+
+            renderMatches(matches) {
+                const container = document.getElementById('matchesContainer');
+
+                if (!matches || matches.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🔍</div>
+                            <h3>No matches found</h3>
+                            <p>No suspicious certificates detected yet. The system is actively monitoring.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const html = matches.map(match => {
+                    // Format timestamp properly
+                    let timestamp = 'Unknown';
+                    if (match.detected_at && match.detected_at !== '0001-01-01T00:00:00Z') {
+                        const date = new Date(match.detected_at);
+                        if (!isNaN(date.getTime())) {
+                            timestamp = date.toLocaleString();
+                        }
+                    }
+
+                    // Highlight keywords in domains
+                    const domainsHighlighted = match.dns_names.map(d =>
+                        this.highlightKeywords(d, match.matched_domains)
+                    ).join(', ');
+
+                    const matchedDomains = match.matched_domains.join(', ');
+
+                    return `
+                        <div class="match-item">
+                            <div class="match-header">
+                                <div>
+                                    <div class="domain-name">${match.dns_names[0]}</div>
+                                    ${match.dns_names.length > 1 ? `<div class="timestamp">+${match.dns_names.length - 1} more domains</div>` : ''}
+                                </div>
+                                <span class="match-badge badge-danger">Match</span>
+                            </div>
+                            <div class="match-details">
+                                <div class="detail-row">
+                                    <span class="detail-label">Matched:</span>
+                                    <span class="detail-value">${matchedDomains}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">All Domains:</span>
+                                    <span class="detail-value">${domainsHighlighted}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">TBS SHA256:</span>
+                                    <span class="detail-value">${match.tbs_sha256.substring(0, 32)}...</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Detected:</span>
+                                    <span class="timestamp">${timestamp}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                container.innerHTML = html + (this.hasMore ? '<div id="loadMoreTrigger" style="height: 1px;"></div>' : '');
+
+                // Setup infinite scroll observer
+                if (this.hasMore) {
+                    this.setupInfiniteScroll();
+                }
+            },
+
+            showLoading() {
+                const container = document.getElementById('matchesContainer');
+                if (container.children.length === 0) {
+                    container.innerHTML = `
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <div>Loading matches...</div>
+                        </div>
+                    `;
+                }
+            },
+
+            applySearch() {
+                const query = this.searchQuery;
+
+                if (!query) {
+                    this.filteredMatches = this.allMatches;
+                } else {
+                    this.filteredMatches = this.allMatches.filter(match => {
+                        return match.dns_names.some(d => d.toLowerCase().includes(query)) ||
+                               match.matched_domains.some(d => d.toLowerCase().includes(query)) ||
+                               match.tbs_sha256.toLowerCase().includes(query);
+                    });
+                }
+
+                this.renderMatches(this.filteredMatches);
+            },
+
+            handleSearch() {
+                this.searchQuery = document.getElementById('searchInput').value.toLowerCase();
+                this.applySearch();
+            },
+
+
+            setupInfiniteScroll() {
+                const trigger = document.getElementById('loadMoreTrigger');
+                if (!trigger) return;
+
+                const observer = new IntersectionObserver((entries) => {
+                    if (entries[0].isIntersecting && !this.isLoading && this.hasMore) {
+                        this.loadMore();
+                    }
+                }, {
+                    rootMargin: '100px'
+                });
+
+                observer.observe(trigger);
+            },
+
+            startAutoRefresh() {
+                // Refresh metrics every 30 seconds
+                setInterval(() => {
+                    this.fetchMetrics();
+                }, 30000);
+            }
+        };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            app.loadInitialData();
+            app.startAutoRefresh();
+        });
+    </script>
+</body>
+</html>

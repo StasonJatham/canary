@@ -1,0 +1,372 @@
+openapi: 3.0.3
+info:
+  title: Canary - Certificate Transparency Monitor
+  description: |
+    Real-time monitoring system for Certificate Transparency logs to detect suspicious domain certificates.
+
+    Canary monitors CT logs via Certspotter and alerts when certificates matching your watchlist are discovered.
+  version: 1.0.0
+  contact:
+    name: Canary Project
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: http://your-domain:8080
+    description: Production server
+
+tags:
+  - name: Monitoring
+    description: Certificate monitoring and match retrieval
+  - name: Keywords
+    description: Keyword management operations
+  - name: System
+    description: System health and metrics
+
+paths:
+  /:
+    get:
+      tags:
+        - System
+      summary: Web UI Dashboard
+      description: Serves the interactive web dashboard for viewing matches
+      responses:
+        '200':
+          description: HTML dashboard page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /hook:
+    post:
+      tags:
+        - Monitoring
+      summary: Certspotter Webhook
+      description: Receives certificate discovery events from Certspotter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: Certificate identifier
+                issuance:
+                  type: object
+                  properties:
+                    dns_names:
+                      type: array
+                      items:
+                        type: string
+                      description: DNS names in the certificate
+                    tbs_sha256:
+                      type: string
+                      description: SHA256 hash of TBS certificate
+                    cert_sha256:
+                      type: string
+                      description: SHA256 hash of certificate
+            example:
+              id: "abc123"
+              issuance:
+                dns_names:
+                  - "paypal-login.com"
+                  - "secure-paypal.net"
+                tbs_sha256: "49fe0fb3bc541f3b07c234b2058ed72e8d6ea14ebbd6b0ba5b94b500cbba6df3"
+                cert_sha256: "d876f3a0651ad7205de58bb659c8addbebab67a1657f113ee59d8275fe95654d"
+      responses:
+        '200':
+          description: Webhook processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  matches:
+                    type: integer
+                    description: Number of keyword matches found
+                    example: 2
+        '400':
+          description: Invalid request body
+        '405':
+          description: Method not allowed
+
+  /matches:
+    get:
+      tags:
+        - Monitoring
+      summary: Get In-Memory Matches
+      description: Returns recent matches from the in-memory cache (real-time matches since server started)
+      responses:
+        '200':
+          description: List of matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Match'
+
+  /matches/recent:
+    get:
+      tags:
+        - Monitoring
+      summary: Get Recent Matches from Database
+      description: Retrieves historical matches from the database within a specified time window with optional pagination
+      parameters:
+        - name: minutes
+          in: query
+          description: "Time window in minutes to look back (default: 5)"
+          required: false
+          schema:
+            type: integer
+            default: 5
+            example: 1440
+        - name: limit
+          in: query
+          description: "Maximum number of results to return (default: 50)"
+          required: false
+          schema:
+            type: integer
+            default: 50
+            example: 50
+        - name: offset
+          in: query
+          description: "Number of results to skip for pagination (default: 0)"
+          required: false
+          schema:
+            type: integer
+            default: 0
+            example: 0
+      responses:
+        '200':
+          description: Historical matches with optional pagination metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    description: Number of matches in this response
+                  total:
+                    type: integer
+                    description: Total number of matches (only included with pagination)
+                  limit:
+                    type: integer
+                    description: Limit used for pagination (only included with pagination)
+                  offset:
+                    type: integer
+                    description: Offset used for pagination (only included with pagination)
+                  has_more:
+                    type: boolean
+                    description: Whether more results are available (only included with pagination)
+                  matches:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Match'
+        '400':
+          description: Invalid minutes parameter
+
+  /matches/clear:
+    post:
+      tags:
+        - Monitoring
+      summary: Clear In-Memory Cache
+      description: Clears the in-memory matches cache (does not affect database)
+      responses:
+        '200':
+          description: Cache cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "cleared"
+
+  /keywords:
+    post:
+      tags:
+        - Keywords
+      summary: Add New Keywords
+      description: Adds new keywords to the watchlist and reloads the matcher
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keywords:
+                  type: array
+                  items:
+                    type: string
+                  description: List of keywords to add
+              required:
+                - keywords
+            example:
+              keywords:
+                - "paypal"
+                - "amazon"
+                - "stripe"
+      responses:
+        '200':
+          description: Keywords added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "keywords added and reloaded"
+                  countAdd:
+                    type: integer
+                    example: 3
+        '400':
+          description: Invalid request or no keywords provided
+        '405':
+          description: Method not allowed
+        '500':
+          description: Failed to add or reload keywords
+
+  /keywords/reload:
+    post:
+      tags:
+        - Keywords
+      summary: Reload Keywords
+      description: Reloads keywords from the keywords file
+      responses:
+        '200':
+          description: Keywords reloaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "keywords reloaded"
+                  count:
+                    type: string
+                    example: "37"
+        '500':
+          description: Failed to reload keywords
+
+  /metrics:
+    get:
+      tags:
+        - System
+      summary: System Metrics
+      description: Returns system metrics and statistics
+      responses:
+        '200':
+          description: System metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queue_len:
+                    type: integer
+                    description: Current match queue length
+                  total_matches:
+                    type: integer
+                    description: Total matches since server start
+                  total_certificates_checked:
+                    type: integer
+                    description: Total certificates processed
+                  watched_domains:
+                    type: integer
+                    description: Number of keywords in watchlist
+                  uptime_seconds:
+                    type: integer
+                    description: Server uptime in seconds
+                  recent_matches:
+                    type: integer
+                    description: Matches in memory cache
+              example:
+                queue_len: 0
+                total_matches: 42
+                total_certificates_checked: 150
+                watched_domains: 37
+                uptime_seconds: 3600
+                recent_matches: 10
+
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health Check
+      description: Checks system health including database and matcher status
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  keywords:
+                    type: integer
+                    description: Number of loaded keywords
+                  uptime:
+                    type: integer
+                    description: Server uptime in seconds
+        '503':
+          description: System is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "unhealthy"
+                  error:
+                    type: string
+                    example: "database unreachable"
+
+components:
+  schemas:
+    Match:
+      type: object
+      description: A certificate that matched one or more keywords from the watchlist
+      properties:
+        dns_names:
+          type: array
+          items:
+            type: string
+          description: All DNS names in the certificate
+          example:
+            - "paypal-secure.com"
+            - "login.paypal-secure.com"
+        matched_domains:
+          type: array
+          items:
+            type: string
+          description: Keywords that matched this certificate
+          example:
+            - "paypal"
+        tbs_sha256:
+          type: string
+          description: SHA256 hash of the TBS (To Be Signed) certificate
+          example: "49fe0fb3bc541f3b07c234b2058ed72e8d6ea14ebbd6b0ba5b94b500cbba6df3"
+        cert_sha256:
+          type: string
+          description: SHA256 hash of the certificate
+          example: "d876f3a0651ad7205de58bb659c8addbebab67a1657f113ee59d8275fe95654d"
+        detected_at:
+          type: string
+          format: date-time
+          description: Timestamp when the match was detected
+          example: "2025-11-07T08:30:00Z"
