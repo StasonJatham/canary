@@ -13,12 +13,12 @@ import (
 var (
 	DB *sql.DB
 
-	CurrentMatcher atomic.Value // *models.MatcherState
+	RuleEngine atomic.Value // *rules.Engine
 
 	CacheMutex    sync.RWMutex
 	RecentMatches []models.Match
 
-	KeywordsFile = "data/keywords.txt"
+	RulesFile = "data/rules.yaml"
 
 	MatchChan chan models.Match
 
@@ -27,18 +27,26 @@ var (
 	// Debug mode - logs incoming webhook payloads
 	Debug bool
 
+	// Domain - if set, assumes HTTPS behind reverse proxy
+	Domain string
+
+	// Secure cookies - automatically enabled if Domain is set
+	SecureCookies bool
+
+	// CORS allowed origin - automatically set based on Domain
+	CORSOrigin string
+
 	// Statistics
 	TotalMatches atomic.Int64
 	TotalCerts   atomic.Int64
 	StartTime    time.Time
 
-	// Partitioned tables for horizontal scaling
-	PartitionTables = []string{
-		"matches_a", "matches_b", "matches_c", "matches_d", "matches_e",
-		"matches_f", "matches_g", "matches_h", "matches_i", "matches_j",
-		"matches_k", "matches_l", "matches_m", "matches_n", "matches_o",
-		"matches_p", "matches_q", "matches_r", "matches_s", "matches_t",
-		"matches_u", "matches_v", "matches_w", "matches_x", "matches_y",
-		"matches_z", "matches_other",
-	}
+	// Partition retention period (days)
+	PartitionRetentionDays = 30
+
+	// Cleanup interval (hours) - how often to run partition cleanup
+	CleanupIntervalHours = 24 // Default: daily
+
+	// Performance collector
+	PerfCollector atomic.Value // *performance.Collector
 )

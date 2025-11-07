@@ -1,0 +1,160 @@
+# Canary Rule Configuration
+# Rules are evaluated in priority order (critical > high > medium > low)
+# Evaluation ALWAYS stops after the FIRST matching rule for maximum performance
+#
+# Syntax:
+#   - Single keyword: paypal
+#   - AND operator: login AND paypal
+#   - OR operator: paypal OR stripe
+#   - NOT operator: login AND NOT legitimate
+#   - Parentheses: (paypal OR stripe) AND login
+#
+# Keywords are case-insensitive and matched via Aho-Corasick
+
+rules:
+  # CRITICAL: Banking & Payment Phishing (High-value targets)
+  - name: banking_credential_phish
+    keywords: (paypal OR stripe OR bank OR chase OR wellsfargo OR bankofamerica OR citibank OR usbank OR capitalone) AND (login OR signin OR authenticate OR password OR credential) AND NOT (official OR legitimate)
+    priority: critical
+    enabled: true
+    comment: "Major banking/payment brands with credential harvesting terms - highest phishing risk"
+
+  - name: financial_account_compromise
+    keywords: (visa OR mastercard OR amex OR discover OR paypal) AND (verify OR suspended OR locked OR confirm OR update) AND account
+    priority: critical
+    enabled: true
+    comment: "Credit card brands with account compromise language - common phishing tactic"
+
+  # HIGH: Tech Company Impersonation
+  - name: microsoft_o365_phish
+    keywords: (microsoft OR office365 OR outlook OR onedrive OR sharepoint) AND (login OR signin OR verify) AND NOT (microsoft.com OR live.com OR msft)
+    priority: high
+    enabled: true
+    comment: "Microsoft/Office365 login pages - very common in corporate phishing"
+
+  - name: google_workspace_phish
+    keywords: (google OR gmail OR gdrive OR docs OR workspace) AND (login OR signin OR verify OR security) AND NOT (google.com OR goog)
+    priority: high
+    enabled: true
+    comment: "Google Workspace/Gmail authentication pages - common phishing target"
+
+  - name: apple_id_phish
+    keywords: (apple OR icloud OR appleid OR itunes) AND (verify OR suspended OR locked OR signin OR login) AND NOT apple.com
+    priority: high
+    enabled: true
+    comment: "Apple ID phishing - targets iCloud and iTunes users"
+
+  - name: amazon_account_phish
+    keywords: amazon AND (login OR signin OR account OR verify OR suspended) AND NOT (aws OR amazon.com OR cloudfront)
+    priority: high
+    enabled: true
+    comment: "Amazon account phishing (excluding AWS/CDN infrastructure)"
+
+  # HIGH: Social Media Impersonation
+  - name: facebook_phish
+    keywords: (facebook OR instagram OR meta) AND (login OR signin OR verify OR security OR suspended) AND NOT (facebook.com OR fbcdn)
+    priority: high
+    enabled: true
+    comment: "Facebook/Instagram/Meta authentication phishing"
+
+  - name: linkedin_phish
+    keywords: linkedin AND (login OR signin OR verify OR profile OR connection) AND NOT linkedin.com
+    priority: high
+    enabled: true
+    comment: "LinkedIn professional network phishing - often used for credential harvesting"
+
+  - name: twitter_phish
+    keywords: (twitter OR x.com) AND (login OR signin OR verify OR suspended) AND NOT (twitter.com OR t.co)
+    priority: high
+    enabled: true
+    comment: "Twitter/X platform authentication phishing"
+
+  # HIGH: Cloud Provider Phishing
+  - name: azure_portal_phish
+    keywords: azure AND (portal OR login OR signin OR admin OR console) AND NOT (microsoft.com OR azure.com OR azure-api.net)
+    priority: high
+    enabled: true
+    comment: "Azure cloud portal phishing - targets IT administrators"
+
+  - name: aws_console_phish
+    keywords: aws AND (console OR login OR signin OR admin OR management) AND NOT (amazon.com OR amazonaws.com)
+    priority: high
+    enabled: true
+    comment: "AWS console phishing - targets cloud administrators"
+
+  # MEDIUM: E-commerce & Retail
+  - name: ecommerce_phish
+    keywords: (ebay OR etsy OR shopify OR walmart) AND (login OR signin OR account OR payment)
+    priority: medium
+    enabled: true
+    comment: "E-commerce platform credential harvesting"
+
+  - name: shipping_phish
+    keywords: (fedex OR ups OR usps OR dhl) AND (track OR package OR delivery OR verify)
+    priority: medium
+    enabled: true
+    comment: "Shipping company phishing - common social engineering vector"
+
+  # MEDIUM: Crypto & Financial Services
+  - name: crypto_exchange_phish
+    keywords: (coinbase OR binance OR kraken OR crypto OR blockchain) AND (login OR wallet OR verify OR security)
+    priority: medium
+    enabled: true
+    comment: "Cryptocurrency exchange phishing - high-value target"
+
+  - name: docusign_phish
+    keywords: docusign AND (sign OR document OR secure OR verify)
+    priority: medium
+    enabled: true
+    comment: "DocuSign impersonation - often used in business email compromise"
+
+  # MEDIUM: Generic Phishing Patterns
+  - name: credential_harvesting
+    keywords: (login OR signin OR authenticate) AND (secure OR verify OR account OR password) AND NOT (microsoft.com OR google.com OR apple.com)
+    priority: medium
+    enabled: true
+    comment: "Generic credential harvesting with security terms"
+
+  - name: account_verification
+    keywords: (verify OR confirm OR validate) AND (account OR identity OR email) AND (urgent OR immediately OR suspended)
+    priority: medium
+    enabled: true
+    comment: "Account verification urgency - common phishing social engineering"
+
+  - name: password_reset_phish
+    keywords: (password OR credential) AND (reset OR change OR update OR expired) AND (click OR link OR confirm)
+    priority: medium
+    enabled: true
+    comment: "Password reset phishing attempts"
+
+  - name: security_alert_phish
+    keywords: (security OR suspicious OR unusual OR unauthorized) AND (activity OR access OR login OR attempt) AND alert
+    priority: medium
+    enabled: true
+    comment: "Fake security alerts to create urgency"
+
+  # LOW: Monitoring - Brand mentions without credential terms
+  - name: paypal_mention
+    keywords: paypal
+    priority: low
+    enabled: false
+    comment: "Simple PayPal brand monitoring (disabled to reduce noise)"
+
+  - name: banking_mention
+    keywords: bank OR banking
+    priority: low
+    enabled: false
+    comment: "General banking keyword monitoring (disabled to reduce noise)"
+
+  # LOW: Educational/Research
+  - name: microsoft_infrastructure
+    keywords: microsoft
+    priority: low
+    enabled: false
+    comment: "Microsoft infrastructure monitoring (disabled - too noisy)"
+
+  - name: aws_infrastructure
+    keywords: aws OR amazon
+    priority: low
+    enabled: false
+    comment: "AWS/Amazon infrastructure (disabled - too noisy)"

@@ -4,19 +4,21 @@
 
 # Canary - Certificate Transparency Monitor
 
-Real-time phishing detection through Certificate Transparency log monitoring. Detect suspicious domains as certificates are issued.
+Real-time phishing detection through Certificate Transparency log monitoring with rule-based detection.
 
-## Purpose
+## What
 
-Canary monitors Certificate Transparency (CT) logs to identify potentially malicious domains in real-time. When a certificate is issued for a domain matching your watchlist (e.g., "paypal", "amazon", "stripe"), Canary immediately alerts you.
+Canary monitors Certificate Transparency (CT) logs to identify potentially malicious domains as certificates are issued. It uses powerful rule-based detection with Boolean logic to catch sophisticated phishing campaigns targeting your brands.
 
 **Key Features:**
-- **Real-time Detection** - Catch phishing domains as certificates are issued
-- **High Performance** - Aho-Corasick algorithm enables efficient multi-keyword matching (O(n+m) vs O(n*k) with regex)
-- **Scalable** - Monitor thousands of keywords simultaneously
-- **Production Ready** - Complete Docker setup with Certspotter integration
-- **Web Dashboard** - Clean, searchable UI for viewing matches
-- **REST API** - Full API with OpenAPI documentation
+- **Rule-Based Detection** - Complex patterns like `(paypal OR stripe) AND login NOT official`
+- **High Performance** - Aho-Corasick algorithm with automatic keyword extraction
+- **Priority System** - Classify threats (critical, high, medium, low)
+- **Web Dashboard** - View matches and manage rules with authentication
+- **REST API** - Complete API with OpenAPI documentation
+- **Production Ready** - Docker setup with Certspotter integration
+
+## Why
 
 **Use Cases:**
 - Brand protection and phishing detection
@@ -24,38 +26,73 @@ Canary monitors Certificate Transparency (CT) logs to identify potentially malic
 - Research on certificate issuance patterns
 - Real-time threat intelligence gathering
 
-## Quick Start
+**Benefits:**
+- Catch phishing domains as certificates are issued (hours before DNS propagation)
+- Sub-millisecond matching with minimal resource usage
+- Flexible rules without code changes
+- Time-based partitioning for efficient queries
+- Automatic cleanup of old data
+
+## How to Deploy
 
 ### Option 1: Docker (Recommended)
 
-Complete production-ready setup with automatic CT log monitoring:
+Complete production setup with automatic CT log monitoring:
 
 ```bash
 cd deployments/docker
 docker-compose up -d --build
 ```
 
-**What this includes:**
-- Canary service with REST API (port 8080)
-- Certspotter monitoring 40+ Certificate Transparency logs
-- Automatic certificate processing and matching
-- SQLite database with partitioned storage
-- Web dashboard at http://localhost:8080
-- API documentation at http://localhost:8080/docs
+This includes:
+- Canary service (port 8080)
+- Certspotter monitoring 40+ CT logs
+- SQLite database with automatic partitioning
+- Web dashboard and API
 
-**Access the services:**
+**First Login:**
+
+When you first start Canary, it creates a random admin user and displays the credentials in the logs:
+
 ```bash
-# Web Dashboard
+# View the auto-generated credentials
+docker-compose logs canary | grep "INITIAL USER CREATED" -A 5
+```
+
+Example output:
+```
+========================================
+INITIAL USER CREATED
+Username: admin_a1b2c3d4
+Password: xK9$mP2@qL5#vR8n
+Please save these credentials!
+Session expires after 30 days
+========================================
+```
+
+Access the dashboard at http://localhost:8080 and log in with these credentials.
+
+**Access Services:**
+```bash
+# Web Dashboard (requires login)
 open http://localhost:8080
 
 # API Documentation
 open http://localhost:8080/docs
 
-# Check health
+# Health Check (public)
 curl http://localhost:8080/health
+```
 
-# View matches
-curl http://localhost:8080/matches/recent?minutes=1440 | jq
+**View Logs:**
+```bash
+docker-compose logs -f canary
+docker-compose logs -f certspotter
+```
+
+**Stop Services:**
+```bash
+docker-compose down
 ```
 
 ### Option 2: Local Development
@@ -64,151 +101,205 @@ curl http://localhost:8080/matches/recent?minutes=1440 | jq
 # Build
 go build -o canary ./cmd/canary
 
-# Configure keywords
-vim data/keywords.txt
-
-# Run
+# Run (creates initial user on first start)
 ./canary
 ```
 
-Service runs on port 8080 (override with `PORT=3000`).
+The service runs on port 8080 (override with `PORT=3000`).
 
-## Deployment
+## Authentication
 
-### Docker Deployment
+Canary uses session-based authentication. Sessions are valid for 30 days.
 
-The Docker setup includes both Canary and Certspotter for complete CT log monitoring:
+### Initial User
+
+On first startup, Canary automatically creates a random admin user. The credentials are displayed in the console output. Save these credentials immediately!
+
+### Creating Additional Users
+
+Use the provided script to create or update users directly in the database:
 
 ```bash
-cd deployments/docker
-docker-compose up -d --build
+# Create a new user
+go run scripts/create_user.go -username admin -password yourpassword
+
+# Create with custom database path
+go run scripts/create_user.go -username admin -password yourpassword -db /path/to/matches.db
+
+# Update existing user's password (will prompt for confirmation)
+go run scripts/create_user.go -username admin -password newpassword
 ```
 
-**Configuration:**
-- Edit `data/keywords.txt` to customize watchlist
-- Reload keywords: `curl -X POST http://localhost:8080/keywords/reload`
-- View logs: `docker-compose logs -f`
-- Stop services: `docker-compose down`
-
-**Files included:**
-- `deployments/docker/docker-compose.yml` - Service orchestration
-- `deployments/docker/Dockerfile` - Canary container
-- `deployments/docker/Dockerfile.certspotter` - Certspotter monitor
-- `scripts/certspotter-loop.sh` - Continuous monitoring wrapper
-- `scripts/certspotter-docker-webhook.sh` - Certificate forwarding to Canary
-- `scripts/watchlist.txt` - Domain patterns for Certspotter
-
-See `deployments/docker/README.md` for detailed documentation.
-
-### Systemd Service
-
-For production Linux servers:
-
+**Script Usage:**
 ```bash
-# Build binary
-CGO_ENABLED=1 go build -o canary ./cmd/canary
+Usage: go run scripts/create_user.go -username <username> -password <password> [-db <db_path>]
 
-# Create service user
-sudo useradd -r -s /bin/false canary
-
-# Install
-sudo mkdir -p /opt/canary/data /opt/canary/web
-sudo cp canary /opt/canary/
-sudo cp -r data/* /opt/canary/data/
-sudo cp -r web/* /opt/canary/web/
-sudo chown -R canary:canary /opt/canary
-
-# Setup systemd
-sudo cp deployments/canary.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable canary
-sudo systemctl start canary
+Example:
+  go run scripts/create_user.go -username admin -password mypassword
+  go run scripts/create_user.go -username admin -password mypassword -db /path/to/matches.db
 ```
 
-**Manage the service:**
+**Note:** There is no `/auth/create-user` API endpoint. Users can only be created:
+1. Automatically on first startup
+2. Using the `create_user.go` script
+
+### Login & Logout
+
+**Login via API:**
 ```bash
-sudo systemctl status canary
-sudo systemctl restart canary
-journalctl -u canary -f
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "yourpassword"}' \
+  -c cookies.txt
 ```
 
-### Cloud Deployment
-
-**Environment Variables:**
-- `PORT` - HTTP port (default: 8080)
-- `DEBUG` - Enable debug logging (default: false)
-
-**Requirements:**
-- SQLite support (CGO required for builds)
-- Persistent volume for `/app/data` directory
-- Outbound HTTPS for Certspotter CT log access
-
-## API
-
-Canary provides a complete REST API for certificate monitoring and keyword management.
-
-### Documentation
-
-**Interactive API Documentation:** http://localhost:8080/docs
-
-Full OpenAPI 3.0 specification with interactive ReDoc interface.
-
-### Core Endpoints
-
-#### `POST /hook`
-Receive Certspotter webhook events (certificate discoveries).
-
+**Logout:**
 ```bash
-curl -X POST http://localhost:8080/hook \
+curl -X POST http://localhost:8080/auth/logout -b cookies.txt
+```
+
+**Using the Web UI:**
+- Navigate to http://localhost:8080
+- Enter your credentials
+- Click logout button in the top right corner
+
+## Detection Rules
+
+### Configuration
+
+Rules are defined in `data/rules.yaml` with Boolean logic support:
+
+```yaml
+rules:
+  - name: paypal-phishing
+    keywords: paypal AND (login OR secure OR account) NOT paypal.com
+    priority: critical
+    enabled: true
+    comment: "Detect PayPal phishing domains"
+
+  - name: tech-brands
+    keywords: (google OR microsoft OR apple) AND (verify OR signin)
+    priority: high
+    enabled: true
+    comment: "Monitor major tech brands"
+
+  - name: cloud-providers
+    keywords: aws OR azure OR gcp
+    priority: medium
+    enabled: false
+    comment: "Cloud provider monitoring (disabled)"
+```
+
+**Rule Fields:**
+- `name` - Unique identifier
+- `keywords` - Boolean expression (AND, OR, NOT with parentheses)
+- `priority` - Threat level: `critical`, `high`, `medium`, `low`
+- `enabled` - Enable/disable without deletion
+- `comment` - Description shown in UI
+
+### Managing Rules
+
+**Reload from File:**
+```bash
+curl -X POST http://localhost:8080/rules/reload
+```
+
+**Via API:**
+```bash
+# List all rules
+curl http://localhost:8080/rules
+
+# Create rule
+curl -X POST http://localhost:8080/rules/create \
   -H "Content-Type: application/json" \
   -d '{
-    "id": "cert-abc123",
-    "issuance": {
-      "dns_names": ["paypal-secure.com", "login.paypal-secure.com"],
-      "tbs_sha256": "abc123...",
-      "cert_sha256": "def456..."
-    }
+    "name": "stripe-phishing",
+    "keywords": "stripe AND payment",
+    "priority": "high",
+    "enabled": true,
+    "comment": "Stripe phishing detection"
   }'
+
+# Update rule
+curl -X PUT http://localhost:8080/rules/update/stripe-phishing \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "stripe-phishing",
+    "keywords": "stripe AND (payment OR checkout)",
+    "priority": "critical",
+    "enabled": true,
+    "comment": "Updated Stripe detection"
+  }'
+
+# Delete rule
+curl -X DELETE http://localhost:8080/rules/delete/stripe-phishing
+
+# Toggle rule (enable/disable)
+curl -X PUT http://localhost:8080/rules/toggle/stripe-phishing
 ```
 
-#### `GET /matches`
-Get real-time matches from memory (since server start).
+**Via Web UI:**
+- Navigate to the Rules tab in the dashboard
+- Use the UI to create, edit, toggle, or delete rules
+- Changes are immediately reflected
+
+## API Usage
+
+### Authentication
+
+Most endpoints require authentication via session cookie. Login first to obtain a session.
+
+**Get Session Cookie:**
+```bash
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "yourpassword"}' \
+  -c cookies.txt
+
+# Use the cookie in subsequent requests
+curl http://localhost:8080/matches -b cookies.txt
+```
+
+### Endpoints
+
+**Public Endpoints:**
+- `GET /login` - Login page
+- `POST /auth/login` - Authenticate user
+- `POST /hook` - Certspotter webhook (no auth required)
+- `GET /health` - Health check
+
+**Protected Endpoints (require authentication):**
+
+#### Matches
 
 ```bash
-curl http://localhost:8080/matches | jq
+# Get recent matches from memory
+curl http://localhost:8080/matches -b cookies.txt | jq
+
+# Get matches from database (last 24 hours)
+curl "http://localhost:8080/matches/recent?minutes=1440" -b cookies.txt | jq
+
+# With pagination (50 per page)
+curl "http://localhost:8080/matches/recent?minutes=1440&limit=50&offset=0" -b cookies.txt | jq
+
+# Clear in-memory cache
+curl -X POST http://localhost:8080/matches/clear -b cookies.txt
 ```
 
-#### `GET /matches/recent?minutes=1440&limit=50&offset=0`
-Query historical matches from database with optional pagination.
-
-**Parameters:**
-- `minutes` - Time window to query (default: 5)
-- `limit` - Results per page (default: 50)
-- `offset` - Results to skip (default: 0)
-
-```bash
-# Last 24 hours (all results)
-curl "http://localhost:8080/matches/recent?minutes=1440" | jq
-
-# Last hour with pagination (50 per page)
-curl "http://localhost:8080/matches/recent?minutes=60&limit=50&offset=0" | jq
-
-# Next page
-curl "http://localhost:8080/matches/recent?minutes=60&limit=50&offset=50" | jq
-```
-
-**Response Format (with pagination):**
+**Response Example:**
 ```json
 {
   "count": 50,
-  "total": 24733,
+  "total": 1234,
   "limit": 50,
   "offset": 0,
   "has_more": true,
   "matches": [
     {
       "dns_names": ["paypal-secure.com", "*.paypal-secure.com"],
-      "matched_domains": ["paypal"],
+      "matched_domains": ["paypal", "secure"],
+      "matched_rule": "paypal-phishing",
+      "priority": "critical",
       "tbs_sha256": "abc123...",
       "cert_sha256": "def456...",
       "detected_at": "2025-11-07T10:30:00Z"
@@ -217,233 +308,338 @@ curl "http://localhost:8080/matches/recent?minutes=60&limit=50&offset=50" | jq
 }
 ```
 
-**Response Format (without pagination):**
-```json
-{
-  "count": 150,
-  "matches": [...]
-}
-```
-
-#### `POST /keywords`
-Add new keywords to watchlist.
+#### Rules
 
 ```bash
-curl -X POST http://localhost:8080/keywords \
+# List rules
+curl http://localhost:8080/rules -b cookies.txt | jq
+
+# Create rule
+curl -X POST http://localhost:8080/rules/create -b cookies.txt \
   -H "Content-Type: application/json" \
-  -d '{"keywords": ["amazon", "microsoft", "stripe"]}'
+  -d '{
+    "name": "banking-phish",
+    "keywords": "(bank OR chase OR wellsfargo) AND login",
+    "priority": "high",
+    "enabled": true,
+    "comment": "Banking phishing"
+  }'
+
+# Update rule (use PUT)
+curl -X PUT http://localhost:8080/rules/update/banking-phish -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "banking-phish",
+    "keywords": "(bank OR chase OR wellsfargo) AND (login OR signin)",
+    "priority": "critical",
+    "enabled": true,
+    "comment": "Enhanced banking phishing"
+  }'
+
+# Delete rule (use DELETE)
+curl -X DELETE http://localhost:8080/rules/delete/banking-phish -b cookies.txt
+
+# Toggle rule (use PUT)
+curl -X PUT http://localhost:8080/rules/toggle/banking-phish -b cookies.txt
+
+# Reload from file
+curl -X POST http://localhost:8080/rules/reload -b cookies.txt
 ```
 
-#### `POST /keywords/reload`
-Reload keywords from file without restart.
+#### Metrics
 
 ```bash
-curl -X POST http://localhost:8080/keywords/reload
+# System metrics
+curl http://localhost:8080/metrics -b cookies.txt | jq
+
+# Performance metrics
+curl "http://localhost:8080/metrics/performance?minutes=60" -b cookies.txt | jq
 ```
 
-#### `GET /metrics`
-System metrics and statistics.
-
-```bash
-curl http://localhost:8080/metrics | jq
-```
-
-**Response:**
+**Metrics Response:**
 ```json
 {
   "queue_len": 0,
-  "total_matches": 42,
-  "total_certificates_checked": 1500,
+  "total_matches": 142,
+  "total_certs": 15000,
   "watched_domains": 37,
-  "uptime_seconds": 3600,
+  "rules_count": 5,
+  "uptime_seconds": 86400,
   "recent_matches": 10
 }
 ```
 
-#### `GET /health`
-Health check endpoint.
+### Webhook Testing
+
+Test the webhook endpoint manually:
 
 ```bash
-curl http://localhost:8080/health
+curl -X POST http://localhost:8080/hook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "test-cert-001",
+    "issuance": {
+      "dns_names": [
+        "paypal-secure-login.com",
+        "www.paypal-secure-login.com"
+      ],
+      "tbs_sha256": "abc123def456...",
+      "cert_sha256": "789xyz012..."
+    }
+  }'
 ```
 
-Returns `200 OK` if healthy, `503 Service Unavailable` if unhealthy (database or matcher issues).
+### Full OpenAPI Documentation
 
-### CORS
+Interactive API documentation with all endpoints, schemas, and examples:
 
-CORS is enabled for all origins to support browser-based clients and direct file access.
+**http://localhost:8080/docs**
 
-## Web UI
+## Configuration
 
-Canary includes a clean, responsive web dashboard for viewing and searching matches.
+### Environment Variables
 
-### Features
-
-- **Real-time Stats** - Total matches, certificates checked, watched domains
-- **Infinite Scroll** - Automatically loads more matches as you scroll (50 per page)
-- **Keyword Highlighting** - Matched keywords highlighted in yellow in domain names
-- **Search** - Filter by domain names, keywords, or certificate hashes
-- **Auto-refresh** - Metrics update every 30 seconds automatically
-- **Responsive Design** - Clean black & white theme, mobile-friendly
-- **Time Range** - Shows last 24 hours by default
-
-### Access
-
-**Local:** http://localhost:8080
-**Docker:** http://localhost:8080
-
-### Screenshots
-
-The UI displays:
-- Stats dashboard showing:
-  - Total Certificates: Unique certificates in database (last 24h)
-  - Loaded: How many certificates currently loaded in browser
-  - Watched Keywords: Number of keywords being monitored
-  - Status: Active, Loading, or Complete (metrics auto-refresh every 30s)
-- Search bar for instant filtering
-- Match cards with DNS names, matched keywords, certificate hashes, timestamps
-- Keyword highlighting in yellow for easy identification
-- Infinite scroll pagination for smooth browsing (50 per page)
-
-<div align="center">
-  <img src="docs/ui.png" alt="Canary Web Dashboard" width="800"/>
-  <p><em>Web Dashboard - Main View</em></p>
-
-  <img src="docs/ui2.png" alt="Canary Match Details" width="800"/>
-  <p><em>Match Details with Keyword Highlighting</em></p>
-</div>
-
-## Usage
-
-### Keyword Configuration
-
-Edit `data/keywords.txt` with brands/terms to monitor (one per line):
-
-```
-paypal
-stripe
-amazon
-microsoft
-banking
-login
-secure
-```
-
-**Best Practices:**
-- Use lowercase keywords
-- Focus on high-value brands
-- Include common typosquatting targets
-- Reload after changes: `curl -X POST http://localhost:8080/keywords/reload`
-
-### Monitoring Workflow
-
-1. **Setup** - Deploy with Docker or systemd
-2. **Configure** - Add keywords to `data/keywords.txt`
-3. **Monitor** - View matches in web UI or query API
-4. **Investigate** - Check suspicious certificates
-5. **Alert** - Integrate with your security tools
-
-### Integration Examples
-
-**Slack Webhook:**
 ```bash
-curl http://localhost:8080/matches/recent?minutes=5 | \
-  jq '.matches[] | "New cert: \(.dns_names | join(", "))"' | \
-  xargs -I {} curl -X POST https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
-    -d '{"text": "{}"}'
+PORT=8080                        # HTTP port (default: 8080)
+DEBUG=true                       # Enable debug logging (default: false)
+DOMAIN=canary.yourdomain.com     # Domain for HTTPS/reverse proxy (enables secure cookies)
+PARTITION_RETENTION_DAYS=30      # Days to keep data (default: 30)
+CLEANUP_INTERVAL_HOURS=24        # Hours between cleanups (default: 24)
 ```
 
-**Email Alert:**
+**Docker Example:**
+```yaml
+# docker-compose.yml
+environment:
+  - PORT=8080
+  - DEBUG=true
+  - DOMAIN=canary.yourdomain.com  # Enables HTTPS mode
+  - PARTITION_RETENTION_DAYS=60
+  - CLEANUP_INTERVAL_HOURS=12
+```
+
+### Reverse Proxy Setup (Caddy/nginx)
+
+When running behind a reverse proxy with HTTPS, set the `DOMAIN` environment variable. This automatically:
+- Enables secure cookies (`Secure` flag)
+- Sets CORS origin to `https://yourdomain.com`
+- Enables `Access-Control-Allow-Credentials` for cookie-based auth
+
+**Why `DOMAIN` is needed:**
+- Browsers require `Secure` flag on cookies when using HTTPS
+- Cookie-based authentication needs proper CORS with credentials
+- Without it, login will fail when accessed via HTTPS
+
+#### Caddy Setup
+
+**1. Create Caddyfile:**
+```caddy
+canary.yourdomain.com {
+    reverse_proxy canary:8080 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+    }
+}
+```
+
+**2. Update docker-compose.yml:**
+```yaml
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - canary-network
+
+  canary:
+    environment:
+      - DOMAIN=canary.yourdomain.com  # Enable HTTPS mode
+    expose:
+      - "8080"  # Internal only, not published
+    networks:
+      - canary-network
+
+volumes:
+  caddy_data:
+  caddy_config:
+```
+
+**3. Start services:**
+```bash
+docker-compose up -d
+```
+
+Caddy automatically obtains Let's Encrypt certificates and handles HTTPS.
+
+See `deployments/Caddyfile.example` for a complete configuration.
+
+#### nginx Setup
+
+**1. Create nginx.conf:**
+```nginx
+server {
+    listen 80;
+    server_name canary.yourdomain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name canary.yourdomain.com;
+
+    ssl_certificate /etc/letsencrypt/live/canary.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/canary.yourdomain.com/privkey.pem;
+
+    location / {
+        proxy_pass http://canary:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+**2. Set DOMAIN in docker-compose.yml:**
+```yaml
+canary:
+  environment:
+    - DOMAIN=canary.yourdomain.com
+```
+
+### Data Persistence
+
+The `data/` directory contains:
+- `rules.yaml` - Detection rules
+- `matches.db` - SQLite database with match history
+
+**Docker Volume:**
+```yaml
+volumes:
+  - ./data:/app/data  # Persistent storage
+```
+
+## Integration Examples
+
+### Slack Notifications
+
 ```bash
 #!/bin/bash
-MATCHES=$(curl -s http://localhost:8080/matches/recent?minutes=60)
+# check-canary.sh
+
+MATCHES=$(curl -s http://localhost:8080/matches/recent?minutes=5 -b cookies.txt)
 COUNT=$(echo "$MATCHES" | jq '.count')
 
 if [ "$COUNT" -gt 0 ]; then
-  echo "$MATCHES" | jq -r '.matches[] | .dns_names | join(", ")' | \
+  MESSAGE=$(echo "$MATCHES" | jq -r '.matches[] | "Priority: \(.priority) - Rule: \(.matched_rule) - Domains: \(.dns_names | join(", "))"')
+
+  curl -X POST https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
+    -H "Content-Type: application/json" \
+    -d "{\"text\": \"Canary Alert: $COUNT new matches\n$MESSAGE\"}"
+fi
+```
+
+### Email Alerts
+
+```bash
+#!/bin/bash
+# email-alerts.sh
+
+MATCHES=$(curl -s http://localhost:8080/matches/recent?minutes=60 -b cookies.txt)
+COUNT=$(echo "$MATCHES" | jq '.count')
+
+if [ "$COUNT" -gt 0 ]; then
+  echo "$MATCHES" | jq -r '.matches[] | "Rule: \(.matched_rule)\nPriority: \(.priority)\nDomains: \(.dns_names | join(", "))\n---"' | \
     mail -s "Canary Alert: $COUNT new matches" security@company.com
 fi
 ```
 
-**Continuous Monitoring:**
-```bash
-# Run every 5 minutes via cron
-*/5 * * * * /usr/local/bin/check-canary.sh
-```
-
-### Database Queries
-
-Direct SQLite queries for advanced analysis:
+### Continuous Monitoring
 
 ```bash
-# Total matches by keyword
-sqlite3 data/matches.db \
-  "SELECT keyword, COUNT(*) as count FROM matches_p GROUP BY keyword ORDER BY count DESC"
-
-# Recent matches for specific keyword
-sqlite3 data/matches.db \
-  "SELECT domains, tbs_sha256 FROM matches_p WHERE keyword='paypal' LIMIT 10"
-
-# Certificates with multiple keywords
-sqlite3 data/matches.db \
-  "SELECT cert_id, COUNT(DISTINCT keyword) as keywords FROM matches_p GROUP BY cert_id HAVING keywords > 1"
+# Add to crontab (runs every 5 minutes)
+*/5 * * * * /path/to/check-canary.sh
 ```
-
-### Certspotter Integration
-
-Canary receives certificates from Certspotter via webhooks.
-
-**Self-Hosted Certspotter:**
-```bash
-export CANARY_ENDPOINT='http://localhost:8080/hook'
-certspotter -watchlist <(echo .) -script scripts/certspotter-webhook.sh
-```
-
-**Certspotter Cloud Service:**
-1. Sign up at https://sslmate.com/certspotter/
-2. Add webhook: `https://your-domain.com/hook`
-3. Done - certificates forwarded automatically
-
-**Docker (Included):**
-Certspotter runs automatically in the docker-compose setup.
 
 ## How It Works
 
 1. **Certspotter** monitors 40+ Certificate Transparency logs
-2. **Discovery** - New certificates detected in real-time
-3. **Webhook** - Certspotter sends certificate data to `/hook`
-4. **Matching** - Aho-Corasick algorithm matches domains against keywords in O(n+m) time
-5. **Storage** - Matches stored in SQLite with partitioned tables (by keyword first letter)
-6. **Query** - Access via REST API or web dashboard
+2. **Webhook** sends new certificates to Canary's `/hook` endpoint
+3. **Keyword Extraction** - Rules are parsed and keywords automatically extracted
+4. **Matching** - Aho-Corasick algorithm matches domains in O(n+m) time
+5. **Rule Evaluation** - Boolean logic evaluated (priority order, first match wins)
+6. **Storage** - Matches stored in time-partitioned SQLite tables
+7. **Cleanup** - Old partitions automatically deleted based on retention policy
+8. **API/UI** - Access via authenticated REST API or web dashboard
 
 **Performance:**
-- Processes thousands of certificates per second
-- Sub-millisecond keyword matching
+- Sub-millisecond matching per certificate
+- Thousands of certificates per second
 - Minimal memory footprint
-- Scales to 10,000+ keywords
+- Efficient time-based queries
 
 ## Troubleshooting
 
-**API connection errors:**
-- Check service is running: `curl http://localhost:8080/health`
-- Verify CORS headers present: `curl -I http://localhost:8080/matches`
-- Check logs: `docker-compose logs canary` or `journalctl -u canary -f`
+**Can't login:**
+```bash
+# Check initial user credentials in logs
+docker-compose logs canary | grep "INITIAL USER"
+
+# Or create new user
+go run scripts/create_user.go -username newadmin -password newpass
+```
 
 **No matches appearing:**
-- Verify keywords loaded: `curl http://localhost:8080/metrics`
-- Check Certspotter is running: `docker-compose ps`
-- Inspect Certspotter logs: `docker-compose logs certspotter`
-- Test webhook manually: `curl -X POST http://localhost:8080/hook -d @test.json`
+```bash
+# Check rules loaded
+curl http://localhost:8080/rules
+
+# Check Certspotter running
+docker-compose ps
+
+# View Certspotter logs
+docker-compose logs certspotter
+
+# Reload rules
+curl -X POST http://localhost:8080/rules/reload
+```
+
+**API connection errors:**
+```bash
+# Check health
+curl http://localhost:8080/health
+
+# Check you're authenticated
+curl http://localhost:8080/matches -b cookies.txt
+
+# View logs
+docker-compose logs canary
+```
 
 **Database issues:**
-- Check database file exists: `ls -lh data/matches.db`
-- Verify write permissions: `ls -ld data/`
-- Check disk space: `df -h`
+```bash
+# Check database exists
+ls -lh data/matches.db
 
-**Performance:**
-- Monitor queue length: `curl http://localhost:8080/metrics | jq .queue_len`
-- Increase workers if queue grows: Edit `database.StartWorkers()` in `cmd/canary/main.go`
-- Check CPU usage: `docker stats` or `top`
+# Check permissions
+ls -ld data/
+
+# Check disk space
+df -h
+```
 
 ## Development
 
@@ -452,20 +648,20 @@ Certspotter runs automatically in the docker-compose setup.
 go build -o canary ./cmd/canary
 ```
 
-**Test:**
-```bash
-go test ./...
-```
+**Requirements:**
+- Go 1.21+
+- CGO enabled (for SQLite)
+- GCC/musl-dev
 
 **Dependencies:**
 ```bash
 go mod download
 ```
 
-**Requirements:**
-- Go 1.21+
-- CGO enabled (for SQLite)
-- GCC/musl-dev (for compilation)
+**Test:**
+```bash
+go test ./...
+```
 
 ## License
 

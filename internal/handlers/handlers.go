@@ -7,12 +7,15 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"canary/internal/config"
 	"canary/internal/database"
-	"canary/internal/matcher"
 	"canary/internal/models"
+	"canary/internal/rules"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Hook processes incoming Certspotter webhook events
@@ -56,30 +59,72 @@ func Hook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	matchedKeywords := matcher.Find(allDomains)
+	// Use rule engine's Aho-Corasick directly (no separate keywords.txt)
+	engineVal := config.RuleEngine.Load()
+	if engineVal == nil {
+		// No rules loaded - skip processing
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":  "ok",
+			"matches": 0,
+		})
+		return
+	}
+
+	engine := engineVal.(*rules.Engine)
+
+	// Track performance
+	startTime := time.Now()
+	matchedKeywords := engine.Find(allDomains)
 	now := time.Now()
+	matchDuration := time.Since(startTime).Microseconds()
+
+	// Record cert processed
+	if perfVal := config.PerfCollector.Load(); perfVal != nil {
+		if perf, ok := perfVal.(interface{ RecordCertProcessed() }); ok {
+			perf.RecordCertProcessed()
+		}
+	}
 
 	if len(matchedKeywords) > 0 {
 		config.TotalCerts.Add(1)
-		log.Printf("Match found: cert_id=%s keywords=%v domains=%v", event.ID, matchedKeywords, allDomains)
-	}
 
-	for _, kw := range matchedKeywords {
-		config.TotalMatches.Add(1)
-		m := models.Match{
-			CertID:     event.ID,
-			Domains:    allDomains,
-			Keyword:    kw,
-			Timestamp:  now,
-			TbsSha256:  event.Issuance.TbsSha256,
-			CertSha256: event.Issuance.CertSha256,
-		}
+		// Evaluate rules (stops after first match for performance)
+		// Pass both keywords and domains so NOT clauses can be properly evaluated
+		ruleMatch := engine.Evaluate(matchedKeywords, allDomains)
 
-		select {
-		case config.MatchChan <- m:
-		default:
-			log.Printf("match channel full, dropping match cert_id=%s keyword=%s", m.CertID, m.Keyword)
+		if ruleMatch != nil {
+			// Rule matched - create single match with rule info
+			config.TotalMatches.Add(1)
+
+			// Record match performance
+			if perfVal := config.PerfCollector.Load(); perfVal != nil {
+				if perf, ok := perfVal.(interface{ RecordMatch(int64) }); ok {
+					perf.RecordMatch(matchDuration)
+				}
+			}
+
+			m := models.Match{
+				CertID:      event.ID,
+				Domains:     allDomains,
+				Keyword:     strings.Join(matchedKeywords, ","),
+				MatchedRule: ruleMatch.RuleName,
+				Priority:    string(ruleMatch.Priority),
+				Timestamp:   now,
+				TbsSha256:   event.Issuance.TbsSha256,
+				CertSha256:  event.Issuance.CertSha256,
+			}
+
+			log.Printf("Rule match: cert_id=%s rule=%s priority=%s keywords=%v domains=%v",
+				event.ID, ruleMatch.RuleName, ruleMatch.Priority, matchedKeywords, allDomains)
+
+			select {
+			case config.MatchChan <- m:
+			default:
+				log.Printf("match channel full, dropping match cert_id=%s rule=%s", m.CertID, m.MatchedRule)
+			}
 		}
+		// No else block - only log and store rule-based matches
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -98,6 +143,8 @@ func GetMatches(w http.ResponseWriter, r *http.Request) {
 	type UIMatch struct {
 		DNSNames       []string  `json:"dns_names"`
 		MatchedDomains []string  `json:"matched_domains"`
+		MatchedRule    string    `json:"matched_rule"`
+		Priority       string    `json:"priority"`
 		TbsSha256      string    `json:"tbs_sha256"`
 		CertSha256     string    `json:"cert_sha256"`
 		DetectedAt     time.Time `json:"detected_at"`
@@ -122,6 +169,8 @@ func GetMatches(w http.ResponseWriter, r *http.Request) {
 			matchMap[match.CertID] = &UIMatch{
 				DNSNames:       match.Domains,
 				MatchedDomains: []string{match.Keyword},
+				MatchedRule:    match.MatchedRule,
+				Priority:       match.Priority,
 				TbsSha256:      match.TbsSha256,
 				CertSha256:     match.CertSha256,
 				DetectedAt:     match.Timestamp,
@@ -146,63 +195,6 @@ func ClearMatches(w http.ResponseWriter, r *http.Request) {
 	config.CacheMutex.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "cleared"})
-}
-
-// AddKeywords adds keywords via API and reloads the matcher
-func AddKeywords(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	defer r.Body.Close()
-
-	var req struct {
-		Keywords []string `json:"keywords"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
-		return
-	}
-	if len(req.Keywords) == 0 {
-		http.Error(w, "no keywords", http.StatusBadRequest)
-		return
-	}
-
-	// Append keywords to file
-	if err := matcher.AppendKeywords(config.KeywordsFile, req.Keywords); err != nil {
-		http.Error(w, "failed to append keywords", http.StatusInternalServerError)
-		return
-	}
-
-	// Reload keywords
-	if err := matcher.Load(config.KeywordsFile); err != nil {
-		http.Error(w, "failed to reload keywords", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status":   "keywords added and reloaded",
-		"countAdd": len(req.Keywords),
-	})
-}
-
-// ReloadKeywords reloads keywords from the file
-func ReloadKeywords(w http.ResponseWriter, r *http.Request) {
-	err := matcher.Load(config.KeywordsFile)
-	w.Header().Set("Content-Type", "application/json")
-	if err != nil {
-		log.Printf("Failed to reload keywords: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-	st := matcher.GetCurrent()
-	cnt := 0
-	if st != nil {
-		cnt = len(st.Keywords)
-	}
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "keywords reloaded", "count": fmt.Sprintf("%d", cnt)})
 }
 
 // GetRecentFromDB retrieves matches from the last X minutes: /matches/recent?minutes=5&limit=50&offset=0
@@ -246,6 +238,7 @@ func GetRecentFromDB(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		log.Printf("Database error in GetRecentFromDB: %v", err)
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}
@@ -254,6 +247,8 @@ func GetRecentFromDB(w http.ResponseWriter, r *http.Request) {
 	type UIMatch struct {
 		DNSNames       []string  `json:"dns_names"`
 		MatchedDomains []string  `json:"matched_domains"`
+		MatchedRule    string    `json:"matched_rule"`
+		Priority       string    `json:"priority"`
 		TbsSha256      string    `json:"tbs_sha256"`
 		CertSha256     string    `json:"cert_sha256"`
 		DetectedAt     time.Time `json:"detected_at"`
@@ -303,6 +298,8 @@ func GetRecentFromDB(w http.ResponseWriter, r *http.Request) {
 			matchMap[match.CertID] = &UIMatch{
 				DNSNames:       match.Domains,
 				MatchedDomains: []string{match.Keyword},
+				MatchedRule:    match.MatchedRule,
+				Priority:       match.Priority,
 				TbsSha256:      match.TbsSha256,
 				CertSha256:     match.CertSha256,
 				DetectedAt:     match.Timestamp,
@@ -339,22 +336,27 @@ func Metrics(w http.ResponseWriter, r *http.Request) {
 		queueLen = len(config.MatchChan)
 	}
 
-	st := matcher.GetCurrent()
+	// Get keyword count from rules engine
 	keywordCount := 0
-	if st != nil {
-		keywordCount = len(st.Keywords)
+	rulesCount := 0
+	engineVal := config.RuleEngine.Load()
+	if engineVal != nil {
+		engine := engineVal.(*rules.Engine)
+		keywordCount = len(engine.Keywords)
+		rulesCount = len(engine.Rules)
 	}
 
 	uptime := time.Since(config.StartTime)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"queue_len":                queueLen,
-		"total_matches":            config.TotalMatches.Load(),
-		"total_certificates_checked": config.TotalCerts.Load(),
-		"watched_domains":          keywordCount,
-		"uptime_seconds":           int(uptime.Seconds()),
-		"recent_matches":           len(config.RecentMatches),
+		"queue_len":      queueLen,
+		"total_matches":  config.TotalMatches.Load(),
+		"total_certs":    config.TotalCerts.Load(),
+		"watched_domains": keywordCount,
+		"rules_count":    rulesCount,
+		"uptime_seconds": int(uptime.Seconds()),
+		"recent_matches": len(config.RecentMatches),
 	})
 }
 
@@ -371,47 +373,74 @@ func Health(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if matcher is loaded
-	st := matcher.GetCurrent()
-	if st == nil {
+	// Check if rules engine is loaded
+	engineVal := config.RuleEngine.Load()
+	if engineVal == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "unhealthy",
-			"error":  "matcher not loaded",
+			"error":  "rules engine not loaded",
 		})
 		return
 	}
 
+	engine := engineVal.(*rules.Engine)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status":   "healthy",
-		"keywords": len(st.Keywords),
+		"keywords": len(engine.Keywords),
+		"rules":    len(engine.Rules),
 		"uptime":   int(time.Since(config.StartTime).Seconds()),
 	})
 }
 
-// ServeUI serves the web UI
+// ServeUI serves the web UI and static files from dist/ directory (minified)
 func ServeUI(w http.ResponseWriter, r *http.Request) {
-	htmlPath := "web/index.html"
+	path := r.URL.Path
 
-	// Try to read the file
-	content, err := os.ReadFile(htmlPath)
-	if err != nil {
-		// If file doesn't exist, return a basic fallback
-		w.WriteHeader(http.StatusNotFound)
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`
-<!DOCTYPE html>
-<html><head><title>Canary UI</title></head><body>
-<h1>UI file not found</h1>
-<p>Please ensure web/index.html exists in the project root.</p>
-</body></html>
-		`))
-		return
+	// Redirect root to index (which is dashboard)
+	if path == "/" {
+		path = "/index.html"
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Try to serve from dist first (minified), fallback to web
+	filePath := "dist" + path
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		// Fallback to web directory if dist doesn't exist
+		filePath = "web" + path
+		content, err = os.ReadFile(filePath)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+	}
+
+	// Set content type based on file extension
+	contentType := "application/octet-stream"
+	if strings.HasSuffix(path, ".html") {
+		contentType = "text/html; charset=utf-8"
+	} else if strings.HasSuffix(path, ".png") {
+		contentType = "image/png"
+	} else if strings.HasSuffix(path, ".jpg") || strings.HasSuffix(path, ".jpeg") {
+		contentType = "image/jpeg"
+	} else if strings.HasSuffix(path, ".svg") {
+		contentType = "image/svg+xml"
+	} else if strings.HasSuffix(path, ".css") {
+		contentType = "text/css"
+	} else if strings.HasSuffix(path, ".js") {
+		contentType = "application/javascript"
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Add cache headers for static assets (not HTML)
+	if !strings.HasSuffix(path, ".html") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000")
+	}
+
 	w.Write(content)
 }
 
@@ -451,4 +480,405 @@ func ServeOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/x-yaml; charset=utf-8")
 	w.Write(content)
+}
+
+// ReloadRules reloads rules from the YAML file
+func ReloadRules(w http.ResponseWriter, r *http.Request) {
+	engine, err := rules.LoadRules(config.RulesFile)
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		log.Printf("Failed to reload rules: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":  err.Error(),
+			"status": "failed",
+		})
+		return
+	}
+
+	config.RuleEngine.Store(engine)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":        "rules reloaded",
+		"rules_loaded":  len(engine.Rules),
+		"enabled_rules": engine.GetEnabledRuleCount(),
+	})
+}
+
+// GetRules returns all loaded rules
+func GetRules(w http.ResponseWriter, r *http.Request) {
+	engineVal := config.RuleEngine.Load()
+	w.Header().Set("Content-Type", "application/json")
+
+	if engineVal == nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"rules": []string{},
+			"count": 0,
+		})
+		return
+	}
+
+	engine := engineVal.(*rules.Engine)
+
+	type RuleInfo struct {
+		Name     string `json:"name"`
+		Keywords string `json:"keywords"`
+		Priority string `json:"priority"`
+		Enabled  bool   `json:"enabled"`
+		Order    int    `json:"order"`
+		Comment  string `json:"comment"`
+	}
+
+	ruleInfos := make([]RuleInfo, 0, len(engine.Rules))
+	for _, rule := range engine.Rules {
+		ruleInfos = append(ruleInfos, RuleInfo{
+			Name:     rule.Name,
+			Keywords: rule.Keywords,
+			Priority: string(rule.Priority),
+			Enabled:  rule.Enabled,
+			Order:    rule.Order,
+			Comment:  rule.Comment,
+		})
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"rules": ruleInfos,
+		"count": len(ruleInfos),
+	})
+}
+
+// CreateRule adds a new rule to rules.yaml
+func CreateRule(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse request body
+	var newRule rules.RuleConfig
+	if err := json.NewDecoder(r.Body).Decode(&newRule); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Read existing rules file
+	data, err := os.ReadFile(config.RulesFile)
+	if err != nil {
+		http.Error(w, "failed to read rules file", http.StatusInternalServerError)
+		return
+	}
+
+	var ruleFile rules.RuleFile
+	if err := yaml.Unmarshal(data, &ruleFile); err != nil {
+		http.Error(w, "failed to parse rules file", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if rule name already exists
+	for _, rule := range ruleFile.Rules {
+		if rule.Name == newRule.Name {
+			http.Error(w, "rule with this name already exists", http.StatusConflict)
+			return
+		}
+	}
+
+	// Add new rule
+	ruleFile.Rules = append(ruleFile.Rules, newRule)
+
+	// Write back to file
+	yamlData, err := yaml.Marshal(ruleFile)
+	if err != nil {
+		http.Error(w, "failed to marshal rules", http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(config.RulesFile, yamlData, 0644); err != nil {
+		http.Error(w, "failed to write rules file", http.StatusInternalServerError)
+		return
+	}
+
+	// Reload rules engine
+	engine, err := rules.LoadRules(config.RulesFile)
+	if err != nil {
+		http.Error(w, "failed to reload rules: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	config.RuleEngine.Store(engine)
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "rule created",
+		"message": "Rule created and loaded successfully",
+	})
+}
+
+// UpdateRule modifies an existing rule in rules.yaml
+func UpdateRule(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get rule name from URL path: /rules/update/{name}
+	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/rules/update/"), "/")
+	if len(pathParts) == 0 || pathParts[0] == "" {
+		http.Error(w, "rule name required", http.StatusBadRequest)
+		return
+	}
+	ruleName := pathParts[0]
+
+	// Parse request body
+	var updatedRule rules.RuleConfig
+	if err := json.NewDecoder(r.Body).Decode(&updatedRule); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Read existing rules file
+	data, err := os.ReadFile(config.RulesFile)
+	if err != nil {
+		http.Error(w, "failed to read rules file", http.StatusInternalServerError)
+		return
+	}
+
+	var ruleFile rules.RuleFile
+	if err := yaml.Unmarshal(data, &ruleFile); err != nil {
+		http.Error(w, "failed to parse rules file", http.StatusInternalServerError)
+		return
+	}
+
+	// Find and update the rule
+	found := false
+	for i, rule := range ruleFile.Rules {
+		if rule.Name == ruleName {
+			ruleFile.Rules[i] = updatedRule
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		http.Error(w, "rule not found", http.StatusNotFound)
+		return
+	}
+
+	// Write back to file
+	yamlData, err := yaml.Marshal(ruleFile)
+	if err != nil {
+		http.Error(w, "failed to marshal rules", http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(config.RulesFile, yamlData, 0644); err != nil {
+		http.Error(w, "failed to write rules file", http.StatusInternalServerError)
+		return
+	}
+
+	// Reload rules engine
+	engine, err := rules.LoadRules(config.RulesFile)
+	if err != nil {
+		http.Error(w, "failed to reload rules: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	config.RuleEngine.Store(engine)
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "rule updated",
+		"message": "Rule updated and reloaded successfully",
+	})
+}
+
+// DeleteRule removes a rule from rules.yaml
+func DeleteRule(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get rule name from URL path: /rules/delete/{name}
+	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/rules/delete/"), "/")
+	if len(pathParts) == 0 || pathParts[0] == "" {
+		http.Error(w, "rule name required", http.StatusBadRequest)
+		return
+	}
+	ruleName := pathParts[0]
+
+	// Read existing rules file
+	data, err := os.ReadFile(config.RulesFile)
+	if err != nil {
+		http.Error(w, "failed to read rules file", http.StatusInternalServerError)
+		return
+	}
+
+	var ruleFile rules.RuleFile
+	if err := yaml.Unmarshal(data, &ruleFile); err != nil {
+		http.Error(w, "failed to parse rules file", http.StatusInternalServerError)
+		return
+	}
+
+	// Find and remove the rule
+	newRules := make([]rules.RuleConfig, 0)
+	found := false
+	for _, rule := range ruleFile.Rules {
+		if rule.Name == ruleName {
+			found = true
+			continue // Skip this rule (delete it)
+		}
+		newRules = append(newRules, rule)
+	}
+
+	if !found {
+		http.Error(w, "rule not found", http.StatusNotFound)
+		return
+	}
+
+	ruleFile.Rules = newRules
+
+	// Write back to file
+	yamlData, err := yaml.Marshal(ruleFile)
+	if err != nil {
+		http.Error(w, "failed to marshal rules", http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(config.RulesFile, yamlData, 0644); err != nil {
+		http.Error(w, "failed to write rules file", http.StatusInternalServerError)
+		return
+	}
+
+	// Reload rules engine
+	engine, err := rules.LoadRules(config.RulesFile)
+	if err != nil {
+		http.Error(w, "failed to reload rules: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	config.RuleEngine.Store(engine)
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "rule deleted",
+		"message": "Rule deleted and rules reloaded successfully",
+	})
+}
+
+// ToggleRule enables or disables a rule
+func ToggleRule(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get rule name from URL path: /rules/toggle/{name}
+	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/rules/toggle/"), "/")
+	if len(pathParts) == 0 || pathParts[0] == "" {
+		http.Error(w, "rule name required", http.StatusBadRequest)
+		return
+	}
+	ruleName := pathParts[0]
+
+	// Read existing rules file
+	data, err := os.ReadFile(config.RulesFile)
+	if err != nil {
+		http.Error(w, "failed to read rules file", http.StatusInternalServerError)
+		return
+	}
+
+	var ruleFile rules.RuleFile
+	if err := yaml.Unmarshal(data, &ruleFile); err != nil {
+		http.Error(w, "failed to parse rules file", http.StatusInternalServerError)
+		return
+	}
+
+	// Find and toggle the rule
+	found := false
+	for i, rule := range ruleFile.Rules {
+		if rule.Name == ruleName {
+			ruleFile.Rules[i].Enabled = !rule.Enabled
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		http.Error(w, "rule not found", http.StatusNotFound)
+		return
+	}
+
+	// Write back to file
+	yamlData, err := yaml.Marshal(ruleFile)
+	if err != nil {
+		http.Error(w, "failed to marshal rules", http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(config.RulesFile, yamlData, 0644); err != nil {
+		http.Error(w, "failed to write rules file", http.StatusInternalServerError)
+		return
+	}
+
+	// Reload rules engine
+	engine, err := rules.LoadRules(config.RulesFile)
+	if err != nil {
+		http.Error(w, "failed to reload rules: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	config.RuleEngine.Store(engine)
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "rule toggled",
+		"message": "Rule enabled/disabled status toggled successfully",
+	})
+}
+
+// GetPerformanceMetrics returns performance statistics
+func GetPerformanceMetrics(w http.ResponseWriter, r *http.Request) {
+	perfVal := config.PerfCollector.Load()
+	if perfVal == nil {
+		http.Error(w, "Performance collector not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse minutes parameter (default: 60)
+	minutesStr := r.URL.Query().Get("minutes")
+	minutes := 60
+	if minutesStr != "" {
+		if m, err := time.ParseDuration(minutesStr + "m"); err == nil {
+			minutes = int(m.Minutes())
+		}
+	}
+
+	// Type assert to get metrics
+	type MetricsGetter interface {
+		GetCurrentMetrics() *models.PerformanceMetrics
+		GetMetricsFromDB(int) ([]*models.PerformanceMetrics, error)
+	}
+
+	perf, ok := perfVal.(MetricsGetter)
+	if !ok {
+		http.Error(w, "Invalid performance collector", http.StatusInternalServerError)
+		return
+	}
+
+	// Get current metrics
+	current := perf.GetCurrentMetrics()
+
+	// Get historical metrics
+	historical, err := perf.GetMetricsFromDB(minutes)
+	if err != nil {
+		log.Printf("Failed to get historical metrics: %v", err)
+		historical = []*models.PerformanceMetrics{}
+	}
+
+	response := map[string]any{
+		"current":    current,
+		"historical": historical,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(response)
 }

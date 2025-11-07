@@ -9,11 +9,14 @@ import (
 	"syscall"
 	"time"
 
+	"canary/internal/auth"
 	"canary/internal/config"
 	"canary/internal/database"
 	"canary/internal/handlers"
-	"canary/internal/matcher"
+	"canary/internal/minifier"
 	"canary/internal/models"
+	"canary/internal/performance"
+	"canary/internal/rules"
 )
 
 func main() {
@@ -21,6 +24,12 @@ func main() {
 
 	// Create data directory if it doesn't exist
 	os.MkdirAll("data", 0755)
+
+	// Build minified assets on startup
+	if err := minifier.BuildDist("web", "dist"); err != nil {
+		log.Printf("Warning: Failed to build minified assets: %v", err)
+		log.Println("Will serve from web/ directory instead")
+	}
 
 	// Initialize database
 	db, err := database.Open("data/matches.db")
@@ -34,21 +43,81 @@ func main() {
 		log.Fatalf("Failed to create partition tables: %v", err)
 	}
 
-	// Load keywords
-	if err := matcher.Load(config.KeywordsFile); err != nil {
-		log.Fatalf("Failed to load keywords on startup: %v", err)
+	// Initialize auth database and create initial user
+	if err := auth.InitializeAuthDB(db); err != nil {
+		log.Fatalf("Failed to initialize auth database: %v", err)
 	}
+
+	username, password, created, err := auth.CreateInitialUser(db)
+	if err != nil {
+		log.Fatalf("Failed to create initial user: %v", err)
+	}
+	if created {
+		log.Println("========================================")
+		log.Printf("INITIAL USER CREATED")
+		log.Printf("Username: %s", username)
+		log.Printf("Password: %s", password)
+		log.Println("Please save these credentials!")
+		log.Println("Session expires after 30 days")
+		log.Println("========================================")
+	}
+
+	// Run database migration for rule fields
+	if err := database.MigrateAddRuleFields(); err != nil {
+		log.Printf("Warning: Migration failed (may already be applied): %v", err)
+	}
+
+	// Cleanup old partition tables
+	if err := database.CleanupOldPartitions(); err != nil {
+		log.Printf("Warning: Failed to cleanup old partitions: %v", err)
+	}
+
+	// Schedule periodic cleanup of old partitions
+	go func() {
+		ticker := time.NewTicker(time.Duration(config.CleanupIntervalHours) * time.Hour)
+		defer ticker.Stop()
+		log.Printf("Partition cleanup scheduled every %d hours (retention: %d days)", config.CleanupIntervalHours, config.PartitionRetentionDays)
+		for range ticker.C {
+			if err := database.CleanupOldPartitions(); err != nil {
+				log.Printf("Warning: Partition cleanup failed: %v", err)
+			}
+		}
+	}()
+
+	// Load rules (which includes building Aho-Corasick from rule keywords)
+	ruleEngine, err := rules.LoadRules(config.RulesFile)
+	if err != nil {
+		log.Fatalf("Failed to load rules: %v", err)
+	}
+
+	log.Printf("Loaded %d rules (%d enabled)", len(ruleEngine.Rules), ruleEngine.GetEnabledRuleCount())
+	log.Printf("Extracted %d unique keywords from rules", len(ruleEngine.Keywords))
+	config.RuleEngine.Store(ruleEngine)
+
+	// Initialize and start performance collector
+	perfCollector := performance.NewCollector(db)
+	config.PerfCollector.Store(perfCollector)
+	perfCollector.Start(len(ruleEngine.Rules), len(ruleEngine.Keywords))
+	log.Println("Performance monitoring started")
 
 	// Start background workers
 	config.MatchChan = make(chan models.Match, 10000)
 	database.StartWorkers(4, 200, 200*time.Millisecond)
 
+	// Start session cleanup
+	handlers.StartSessionCleanup()
+
 	// CORS middleware
 	corsMiddleware := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Origin", config.CORSOrigin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			// Enable credentials for cookie-based auth when not using wildcard origin
+			if config.CORSOrigin != "*" {
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
 
 			if r.Method == "OPTIONS" {
 				w.WriteHeader(http.StatusOK)
@@ -61,17 +130,32 @@ func main() {
 
 	// Setup HTTP routes
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", handlers.ServeUI)
-	mux.HandleFunc("/docs", handlers.ServeAPIDocs)
-	mux.HandleFunc("/openapi.yaml", handlers.ServeOpenAPISpec)
-	mux.HandleFunc("/hook", handlers.Hook)
-	mux.HandleFunc("/matches", handlers.GetMatches)
-	mux.HandleFunc("/matches/clear", handlers.ClearMatches)
-	mux.HandleFunc("/keywords/reload", handlers.ReloadKeywords)
-	mux.HandleFunc("/keywords", handlers.AddKeywords)
-	mux.HandleFunc("/matches/recent", handlers.GetRecentFromDB)
-	mux.HandleFunc("/metrics", handlers.Metrics)
+
+	// Public routes (no auth required)
+	mux.HandleFunc("/login", handlers.ServeLogin)
+	mux.HandleFunc("/auth/login", handlers.Login)
+	mux.HandleFunc("/hook", handlers.Hook) // Webhook endpoint should be public
 	mux.HandleFunc("/health", handlers.Health)
+
+	// Create auth middleware
+	authMW := auth.AuthMiddleware(db, config.SecureCookies)
+
+	// Protected routes (require authentication)
+	mux.Handle("/", authMW(http.HandlerFunc(handlers.ServeUI)))
+	mux.Handle("/docs", authMW(http.HandlerFunc(handlers.ServeAPIDocs)))
+	mux.Handle("/openapi.yaml", authMW(http.HandlerFunc(handlers.ServeOpenAPISpec)))
+	mux.Handle("/matches", authMW(http.HandlerFunc(handlers.GetMatches)))
+	mux.Handle("/matches/clear", authMW(http.HandlerFunc(handlers.ClearMatches)))
+	mux.Handle("/matches/recent", authMW(http.HandlerFunc(handlers.GetRecentFromDB)))
+	mux.Handle("/rules/reload", authMW(http.HandlerFunc(handlers.ReloadRules)))
+	mux.Handle("/rules/create", authMW(http.HandlerFunc(handlers.CreateRule)))
+	mux.Handle("/rules/update/", authMW(http.HandlerFunc(handlers.UpdateRule)))
+	mux.Handle("/rules/delete/", authMW(http.HandlerFunc(handlers.DeleteRule)))
+	mux.Handle("/rules/toggle/", authMW(http.HandlerFunc(handlers.ToggleRule)))
+	mux.Handle("/rules", authMW(http.HandlerFunc(handlers.GetRules)))
+	mux.Handle("/metrics", authMW(http.HandlerFunc(handlers.Metrics)))
+	mux.Handle("/metrics/performance", authMW(http.HandlerFunc(handlers.GetPerformanceMetrics)))
+	mux.Handle("/auth/logout", authMW(http.HandlerFunc(handlers.Logout)))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -82,6 +166,34 @@ func main() {
 	if os.Getenv("DEBUG") == "true" {
 		config.Debug = true
 		log.Println("DEBUG mode enabled - will log all incoming webhook payloads")
+	}
+
+	// Configure domain (for reverse proxy / HTTPS)
+	config.Domain = os.Getenv("DOMAIN")
+	if config.Domain != "" {
+		// Assume HTTPS behind reverse proxy
+		config.SecureCookies = true
+		config.CORSOrigin = "https://" + config.Domain
+		log.Printf("Domain configured: %s (secure cookies enabled, CORS origin: %s)", config.Domain, config.CORSOrigin)
+	} else {
+		// Local development mode
+		config.SecureCookies = false
+		config.CORSOrigin = "*"
+		log.Println("Running in local mode (insecure cookies, CORS: *)")
+	}
+
+	// Configure partition retention from ENV
+	if retentionDays := os.Getenv("PARTITION_RETENTION_DAYS"); retentionDays != "" {
+		if days, err := time.ParseDuration(retentionDays + "h"); err == nil {
+			config.PartitionRetentionDays = int(days.Hours() / 24)
+		}
+	}
+
+	// Configure cleanup interval from ENV
+	if cleanupInterval := os.Getenv("CLEANUP_INTERVAL_HOURS"); cleanupInterval != "" {
+		if hours, err := time.ParseDuration(cleanupInterval + "h"); err == nil {
+			config.CleanupIntervalHours = int(hours.Hours())
+		}
 	}
 
 	srv := &http.Server{
@@ -119,8 +231,8 @@ func main() {
 	log.Printf("  GET  /matches           - Get recent matches from memory")
 	log.Printf("  GET  /matches/recent    - Get matches from DB (param: minutes)")
 	log.Printf("  POST /matches/clear     - Clear in-memory matches")
-	log.Printf("  POST /keywords          - Add new keywords")
-	log.Printf("  POST /keywords/reload   - Reload keywords from file")
+	log.Printf("  GET  /rules             - List all loaded rules")
+	log.Printf("  POST /rules/reload      - Reload rules from YAML file")
 	log.Printf("  GET  /metrics           - System metrics")
 	log.Printf("  GET  /health            - Health check")
 

@@ -1,0 +1,50 @@
+# Caddy reverse proxy configuration for Canary
+#
+# Setup:
+# 1. Copy this file: cp Caddyfile.example Caddyfile
+# 2. Replace canary.yourdomain.com with your actual domain
+# 3. Set DOMAIN environment variable in docker-compose.yml
+# 4. Run: caddy run
+
+canary.yourdomain.com {
+    # Automatic HTTPS with Let's Encrypt
+    # Caddy handles certificates automatically
+
+    # Reverse proxy to Canary
+    reverse_proxy canary:8080 {
+        # Forward client IP information
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+    }
+
+    # Security headers
+    header {
+        # Enable HSTS
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+        # Prevent clickjacking
+        X-Frame-Options "SAMEORIGIN"
+
+        # Prevent MIME sniffing
+        X-Content-Type-Options "nosniff"
+
+        # XSS protection
+        X-XSS-Protection "1; mode=block"
+
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/canary-access.log
+        format json
+    }
+}
+
+# Optional: Redirect www to non-www
+www.canary.yourdomain.com {
+    redir https://canary.yourdomain.com{uri} permanent
+}
