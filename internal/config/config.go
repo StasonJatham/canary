@@ -27,6 +27,9 @@ var (
 	// Debug mode - logs incoming webhook payloads
 	Debug bool
 
+	// Public dashboard - allows viewing without auth (no editing)
+	PublicDashboard bool
+
 	// Domain - if set, assumes HTTPS behind reverse proxy
 	Domain string
 

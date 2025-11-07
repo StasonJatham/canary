@@ -136,25 +136,35 @@ func main() {
 	mux.HandleFunc("/auth/login", handlers.Login)
 	mux.HandleFunc("/hook", handlers.Hook) // Webhook endpoint should be public
 	mux.HandleFunc("/health", handlers.Health)
+	mux.HandleFunc("/config", handlers.GetConfig) // Public config info
 
 	// Create auth middleware
 	authMW := auth.AuthMiddleware(db, config.SecureCookies)
+	readOnlyMW := auth.ReadOnlyMiddleware(db, config.SecureCookies)
 
-	// Protected routes (require authentication)
-	mux.Handle("/", authMW(http.HandlerFunc(handlers.ServeUI)))
-	mux.Handle("/docs", authMW(http.HandlerFunc(handlers.ServeAPIDocs)))
-	mux.Handle("/openapi.yaml", authMW(http.HandlerFunc(handlers.ServeOpenAPISpec)))
-	mux.Handle("/matches", authMW(http.HandlerFunc(handlers.GetMatches)))
+	// Choose middleware based on PUBLIC_DASHBOARD mode
+	viewMW := authMW // Default: require auth for viewing
+	if config.PublicDashboard {
+		viewMW = readOnlyMW // Public mode: allow viewing, require auth for edits
+	}
+
+	// Routes that can be read-only in public mode
+	mux.Handle("/", viewMW(http.HandlerFunc(handlers.ServeUI)))
+	mux.Handle("/docs", viewMW(http.HandlerFunc(handlers.ServeAPIDocs)))
+	mux.Handle("/openapi.yaml", viewMW(http.HandlerFunc(handlers.ServeOpenAPISpec)))
+	mux.Handle("/matches", viewMW(http.HandlerFunc(handlers.GetMatches)))
+	mux.Handle("/matches/recent", viewMW(http.HandlerFunc(handlers.GetRecentFromDB)))
+	mux.Handle("/rules", viewMW(http.HandlerFunc(handlers.GetRules)))
+	mux.Handle("/metrics", viewMW(http.HandlerFunc(handlers.Metrics)))
+	mux.Handle("/metrics/performance", viewMW(http.HandlerFunc(handlers.GetPerformanceMetrics)))
+
+	// Routes that always require full authentication (modifications)
 	mux.Handle("/matches/clear", authMW(http.HandlerFunc(handlers.ClearMatches)))
-	mux.Handle("/matches/recent", authMW(http.HandlerFunc(handlers.GetRecentFromDB)))
 	mux.Handle("/rules/reload", authMW(http.HandlerFunc(handlers.ReloadRules)))
 	mux.Handle("/rules/create", authMW(http.HandlerFunc(handlers.CreateRule)))
 	mux.Handle("/rules/update/", authMW(http.HandlerFunc(handlers.UpdateRule)))
 	mux.Handle("/rules/delete/", authMW(http.HandlerFunc(handlers.DeleteRule)))
 	mux.Handle("/rules/toggle/", authMW(http.HandlerFunc(handlers.ToggleRule)))
-	mux.Handle("/rules", authMW(http.HandlerFunc(handlers.GetRules)))
-	mux.Handle("/metrics", authMW(http.HandlerFunc(handlers.Metrics)))
-	mux.Handle("/metrics/performance", authMW(http.HandlerFunc(handlers.GetPerformanceMetrics)))
 	mux.Handle("/auth/logout", authMW(http.HandlerFunc(handlers.Logout)))
 
 	port := os.Getenv("PORT")
@@ -166,6 +176,12 @@ func main() {
 	if os.Getenv("DEBUG") == "true" {
 		config.Debug = true
 		log.Println("DEBUG mode enabled - will log all incoming webhook payloads")
+	}
+
+	// Enable public dashboard mode
+	if os.Getenv("PUBLIC_DASHBOARD") == "true" {
+		config.PublicDashboard = true
+		log.Println("PUBLIC_DASHBOARD mode enabled - dashboard is read-only without auth")
 	}
 
 	// Configure domain (for reverse proxy / HTTPS)

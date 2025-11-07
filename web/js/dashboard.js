@@ -6,17 +6,37 @@ class Dashboard {
         this.currentPage = 0;
         this.pageSize = 20;
         this.refreshInterval = null;
+        this.publicDashboard = false;
 
         this.init();
     }
 
-    init() {
+    async init() {
+        await this.checkPublicMode();
         this.setupEventListeners();
         this.setupThemeToggle();
         this.loadMetrics();
         this.loadMatches();
         this.loadPerformanceMetrics();
         this.startAutoRefresh();
+    }
+
+    async checkPublicMode() {
+        try {
+            const response = await fetch('/config');
+            if (response.ok) {
+                const data = await response.json();
+                this.publicDashboard = data.public_dashboard || false;
+
+                // Hide clear button if in public mode
+                if (this.publicDashboard) {
+                    const clearBtn = document.getElementById('clearBtn');
+                    if (clearBtn) clearBtn.style.display = 'none';
+                }
+            }
+        } catch (error) {
+            console.error('Error checking public mode:', error);
+        }
     }
 
     setupEventListeners() {

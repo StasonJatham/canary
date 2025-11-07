@@ -360,6 +360,14 @@ func Metrics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetConfig returns public configuration info
+func GetConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"public_dashboard": config.PublicDashboard,
+	})
+}
+
 // Health checks system health
 func Health(w http.ResponseWriter, r *http.Request) {
 	// Check if database is accessible

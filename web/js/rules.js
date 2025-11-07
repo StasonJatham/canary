@@ -5,17 +5,39 @@ class RulesManager {
         this.currentRule = null;
         this.ruleModal = null;
         this.deleteModal = null;
+        this.publicDashboard = false;
 
         this.init();
     }
 
-    init() {
+    async init() {
+        await this.checkPublicMode();
         this.ruleModal = new bootstrap.Modal(document.getElementById('ruleModal'));
         this.deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
 
         this.setupEventListeners();
         this.setupThemeToggle();
         this.loadRules();
+    }
+
+    async checkPublicMode() {
+        try {
+            const response = await fetch('/config');
+            if (response.ok) {
+                const data = await response.json();
+                this.publicDashboard = data.public_dashboard || false;
+
+                // Hide action buttons if in public mode
+                if (this.publicDashboard) {
+                    const addRuleBtn = document.getElementById('addRuleBtn');
+                    const reloadBtn = document.getElementById('reloadRulesBtn');
+                    if (addRuleBtn) addRuleBtn.style.display = 'none';
+                    if (reloadBtn) reloadBtn.style.display = 'none';
+                }
+            }
+        } catch (error) {
+            console.error('Error checking public mode:', error);
+        }
     }
 
     setupEventListeners() {
@@ -95,6 +117,23 @@ class RulesManager {
             low: 'secondary'
         }[rule.priority] || 'secondary';
 
+        // Hide action buttons in public mode
+        const actionsColumn = this.publicDashboard ? '' : `
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-secondary" onclick="rulesManager.toggleRule('${rule.name}')" title="${rule.enabled ? 'Disable' : 'Enable'}">
+                        <i class="bi ${rule.enabled ? 'bi-pause' : 'bi-play'}"></i>
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="rulesManager.showEditRule('${rule.name}')" title="Edit">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-outline-danger" onclick="rulesManager.showDeleteRule('${rule.name}')" title="Delete">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </td>
+        `;
+
         return `
             <tr>
                 <td class="text-center">${statusIcon}</td>
@@ -111,19 +150,7 @@ class RulesManager {
                 <td class="text-center">
                     <span class="badge bg-secondary">${rule.order}</span>
                 </td>
-                <td>
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-secondary" onclick="rulesManager.toggleRule('${rule.name}')" title="${rule.enabled ? 'Disable' : 'Enable'}">
-                            <i class="bi ${rule.enabled ? 'bi-pause' : 'bi-play'}"></i>
-                        </button>
-                        <button class="btn btn-outline-primary" onclick="rulesManager.showEditRule('${rule.name}')" title="Edit">
-                            <i class="bi bi-pencil"></i>
-                        </button>
-                        <button class="btn btn-outline-danger" onclick="rulesManager.showDeleteRule('${rule.name}')" title="Delete">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                </td>
+                ${actionsColumn}
             </tr>
         `;
     }

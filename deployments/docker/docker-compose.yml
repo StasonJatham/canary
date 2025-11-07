@@ -13,6 +13,8 @@ services:
       - CLEANUP_INTERVAL_HOURS=24
       # For reverse proxy (Caddy/nginx) - enables HTTPS cookies and proper CORS
       # - DOMAIN=canary.yourdomain.com
+      # Make dashboard public (read-only, no auth needed for viewing)
+      # - PUBLIC_DASHBOARD=true
     volumes:
       - ../../data:/app/data
     healthcheck:

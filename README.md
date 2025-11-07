@@ -402,6 +402,7 @@ Interactive API documentation with all endpoints, schemas, and examples:
 ```bash
 PORT=8080                        # HTTP port (default: 8080)
 DEBUG=true                       # Enable debug logging (default: false)
+PUBLIC_DASHBOARD=true            # Make dashboard public (read-only, no login required)
 DOMAIN=canary.yourdomain.com     # Domain for HTTPS/reverse proxy (enables secure cookies)
 PARTITION_RETENTION_DAYS=30      # Days to keep data (default: 30)
 CLEANUP_INTERVAL_HOURS=24        # Hours between cleanups (default: 24)
@@ -413,7 +414,8 @@ CLEANUP_INTERVAL_HOURS=24        # Hours between cleanups (default: 24)
 environment:
   - PORT=8080
   - DEBUG=true
-  - DOMAIN=canary.yourdomain.com  # Enables HTTPS mode
+  - PUBLIC_DASHBOARD=true          # Public read-only access
+  - DOMAIN=canary.yourdomain.com   # Enables HTTPS mode
   - PARTITION_RETENTION_DAYS=60
   - CLEANUP_INTERVAL_HOURS=12
 ```
@@ -519,6 +521,41 @@ canary:
   environment:
     - DOMAIN=canary.yourdomain.com
 ```
+
+### Public Dashboard Mode
+
+Set `PUBLIC_DASHBOARD=true` to make the dashboard accessible without authentication for viewing only.
+
+**What it does:**
+- ✅ Dashboard and rules are viewable without login
+- ✅ Matches, metrics, and API docs are publicly accessible
+- ❌ Editing, creating, deleting rules requires authentication
+- ❌ Clearing matches requires authentication
+
+**Use cases:**
+- Share phishing detection results with your team
+- Public threat intelligence dashboard
+- Security operations center (SOC) displays
+- Transparency for stakeholders
+
+**Example:**
+```yaml
+# docker-compose.yml
+environment:
+  - PUBLIC_DASHBOARD=true
+```
+
+**Security notes:**
+- Anyone can view matches and rules
+- Modifications still require login
+- Consider if your matched domains contain sensitive information
+- Use `DOMAIN` with public dashboard for proper CORS
+
+**How it works:**
+- GET requests allowed without auth (viewing)
+- POST/PUT/DELETE require authentication (editing)
+- UI automatically hides edit buttons when not authenticated
+- `/config` endpoint tells UI if public mode is enabled
 
 ### Data Persistence
 
