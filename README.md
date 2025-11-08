@@ -708,3 +708,57 @@ go test ./...
 ## License
 
 For authorized security research and defensive purposes only.
+
+## Third-Party Licenses
+
+Canary uses the following open-source dependencies. We acknowledge and are grateful to the developers for their contributions:
+
+### Certspotter
+
+**License:** Mozilla Public License 2.0 (MPL-2.0)
+**Source:** https://github.com/SSLMate/certspotter
+**Copyright:** Copyright © SSLMate, Inc.
+
+This project uses Certspotter for monitoring Certificate Transparency logs. Certspotter is licensed under the Mozilla Public License 2.0. The source code is available at the repository above, and we build it from source in our Docker deployment. The full MPL-2.0 license is available at http://mozilla.org/MPL/2.0/.
+
+### go-sqlite3
+
+**License:** MIT License
+**Source:** https://github.com/mattn/go-sqlite3
+**Copyright:** Copyright (c) 2014 Yasuhiro Matsumoto
+
+### ahocorasick
+
+**License:** MIT License
+**Source:** https://github.com/anknown/ahocorasick
+**Copyright:** Copyright (c) 2015 hanshinan
+
+### gopsutil
+
+**License:** BSD 3-Clause License
+**Source:** https://github.com/shirou/gopsutil
+**Copyright:** Copyright (c) 2014, WAKAYAMA Shirou
+
+### minify
+
+**License:** MIT License
+**Source:** https://github.com/tdewolff/minify
+**Copyright:** Copyright (c) 2025 Taco de Wolff
+
+### yaml.v3
+
+**License:** MIT License and Apache License 2.0
+**Source:** https://github.com/go-yaml/yaml
+**Copyright:** Copyright (c) 2006-2011 Kirill Simonov, Copyright (c) 2011-2019 Canonical Ltd
+
+### golang.org/x/crypto
+
+**License:** BSD 3-Clause License
+**Source:** https://cs.opensource.google/go/x/crypto
+**Copyright:** Copyright 2009 The Go Authors
+
+---
+
+**Full License Texts:**
+
+The full text of each license can be found in the respective project repositories linked above. All licenses require that copyright notices be retained in redistributions. We comply with all license requirements and acknowledge the original authors.
