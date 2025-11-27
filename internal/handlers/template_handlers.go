@@ -163,13 +163,15 @@ func ServeRuleForm(w http.ResponseWriter, r *http.Request) {
 	errorMsg := r.URL.Query().Get("error")
 
 	data := struct {
-		Rule      *rules.Rule
-		Error     string
-		CSRFToken string
+		Rule       *rules.Rule
+		Error      string
+		CSRFToken  string
+		ActivePage string
 	}{
-		Rule:      rule,
-		Error:     errorMsg,
-		CSRFToken: getCSRFToken(r),
+		Rule:       rule,
+		Error:      errorMsg,
+		CSRFToken:  getCSRFToken(r),
+		ActivePage: "rules",
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -13,61 +13,61 @@
     {{end}}
 
     <!-- Stats Cards -->
-    <div class="row g-3 mb-4">
-        <div class="col-md-3">
-            <div class="card border">
-                <div class="card-body">
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+            <div class="card border h-100">
+                <div class="card-body p-2 p-md-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <p class="text-muted small mb-1">Total Matches</p>
-                            <h3 class="mb-0" id="totalMatches">-</h3>
+                            <h3 class="mb-0 fs-4" id="totalMatches">-</h3>
                         </div>
-                        <div class="text-primary">
+                        <div class="text-primary d-none d-md-block">
                             <i class="bi bi-file-earmark-check fs-1"></i>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card border">
-                <div class="card-body">
+        <div class="col-6 col-md-3">
+            <div class="card border h-100">
+                <div class="card-body p-2 p-md-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <p class="text-muted small mb-1">Certificates</p>
-                            <h3 class="mb-0" id="totalCerts">-</h3>
+                            <h3 class="mb-0 fs-4" id="totalCerts">-</h3>
                         </div>
-                        <div class="text-success">
+                        <div class="text-success d-none d-md-block">
                             <i class="bi bi-shield-check fs-1"></i>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card border">
-                <div class="card-body">
+        <div class="col-6 col-md-3">
+            <div class="card border h-100">
+                <div class="card-body p-2 p-md-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <p class="text-muted small mb-1">Active Rules</p>
-                            <h3 class="mb-0" id="activeRules">-</h3>
+                            <h3 class="mb-0 fs-4" id="activeRules">-</h3>
                         </div>
-                        <div class="text-warning">
+                        <div class="text-warning d-none d-md-block">
                             <i class="bi bi-list-check fs-1"></i>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card border">
-                <div class="card-body">
+        <div class="col-6 col-md-3">
+            <div class="card border h-100">
+                <div class="card-body p-2 p-md-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <p class="text-muted small mb-1">Uptime</p>
-                            <h3 class="mb-0" id="uptime">0m</h3>
+                            <h3 class="mb-0 fs-4" id="uptime">0m</h3>
                         </div>
-                        <div class="text-info">
+                        <div class="text-info d-none d-md-block">
                             <i class="bi bi-clock-history fs-1"></i>
                         </div>
                     </div>
@@ -77,76 +77,79 @@
     </div>
 
     <!-- Performance Metrics -->
-    <div class="card border mb-4">
-        <div class="card-header">
-            <i class="bi bi-speedometer2 me-2"></i>Performance Metrics
+    <div class="card border mb-3">
+        <div class="card-header py-2" data-bs-toggle="collapse" data-bs-target="#perfMetrics" style="cursor: pointer;">
+            <small><i class="bi bi-speedometer2 me-2"></i>Performance Metrics</small>
         </div>
-        <div class="card-body">
-            <div class="row g-3 text-center">
-                <div class="col-md-2">
-                    <div class="text-muted small">Certs/Min</div>
-                    <div class="h5 mb-0" id="certsPerMin">-</div>
-                </div>
-                <div class="col-md-2">
-                    <div class="text-muted small">Matches/Min</div>
-                    <div class="h5 mb-0" id="matchesPerMin">-</div>
-                </div>
-                <div class="col-md-2">
-                    <div class="text-muted small">Avg Match Time</div>
-                    <div class="h5 mb-0" id="avgMatchTime">-</div>
-                </div>
-                <div class="col-md-2">
-                    <div class="text-muted small">CPU Usage</div>
-                    <div class="h5 mb-0" id="cpuUsage">-</div>
-                </div>
-                <div class="col-md-2">
-                    <div class="text-muted small">Memory</div>
-                    <div class="h5 mb-0" id="memoryUsage">-</div>
-                </div>
-                <div class="col-md-2">
-                    <div class="text-muted small">Goroutines</div>
-                    <div class="h5 mb-0" id="goroutines">-</div>
+        <div class="collapse" id="perfMetrics">
+            <div class="card-body p-2">
+                <div class="row g-2 text-center">
+                    <div class="col-4 col-md-2">
+                        <div class="text-muted small">Certs/Min</div>
+                        <div class="h6 mb-0" id="certsPerMin">-</div>
+                    </div>
+                    <div class="col-4 col-md-2">
+                        <div class="text-muted small">Matches/Min</div>
+                        <div class="h6 mb-0" id="matchesPerMin">-</div>
+                    </div>
+                    <div class="col-4 col-md-2">
+                        <div class="text-muted small">Avg Match Time</div>
+                        <div class="h6 mb-0" id="avgMatchTime">-</div>
+                    </div>
+                    <div class="col-4 col-md-2">
+                        <div class="text-muted small">CPU Usage</div>
+                        <div class="h6 mb-0" id="cpuUsage">-</div>
+                    </div>
+                    <div class="col-4 col-md-2">
+                        <div class="text-muted small">Memory</div>
+                        <div class="h6 mb-0" id="memoryUsage">-</div>
+                    </div>
+                    <div class="col-4 col-md-2">
+                        <div class="text-muted small">Goroutines</div>
+                        <div class="h6 mb-0" id="goroutines">-</div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Search & Filter -->
-    <div class="card border mb-4">
-        <div class="card-header">
-            <h5 class="mb-0">Search & Filter</h5>
+    <div class="card border mb-3">
+        <div class="card-header py-2" data-bs-toggle="collapse" data-bs-target="#searchFilter" style="cursor: pointer;">
+            <h6 class="mb-0">Search & Filter</h6>
         </div>
-        <div class="card-body">
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label">Search Domain</label>
-                    <input type="text" class="form-control" id="searchInput" placeholder="Enter domain or keyword...">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Time Range</label>
-                    <select class="form-select" id="timeRange">
-                        <option value="10">Last 10 minutes</option>
-                        <option value="30" selected>Last 30 minutes</option>
-                        <option value="60">Last hour</option>
-                        <option value="180">Last 3 hours</option>
-                        <option value="1440">Last 24 hours</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Priority</label>
-                    <select class="form-select" id="priorityFilter">
-                        <option value="">All Priorities</option>
-                        <option value="critical">Critical</option>
-                        <option value="high">High</option>
-                        <option value="medium">Medium</option>
-                        <option value="low">Low</option>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">&nbsp;</label>
-                    <button class="btn btn-primary w-100" id="refreshBtn">
-                        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
-                    </button>
+        <div class="collapse show" id="searchFilter">
+            <div class="card-body p-3">
+                <div class="row g-2">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small mb-1">Search Domain</label>
+                        <input type="text" class="form-control form-control-sm" id="searchInput" placeholder="Enter domain or keyword...">
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small mb-1">Time Range</label>
+                        <select class="form-select form-select-sm" id="timeRange">
+                            <option value="10">Last 10 minutes</option>
+                            <option value="30" selected>Last 30 minutes</option>
+                            <option value="60">Last hour</option>
+                            <option value="180">Last 3 hours</option>
+                            <option value="1440">Last 24 hours</option>
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small mb-1">Priority</label>
+                        <select class="form-select form-select-sm" id="priorityFilter">
+                            <option value="">All Priorities</option>
+                            <option value="critical">Critical</option>
+                            <option value="high">High</option>
+                            <option value="medium">Medium</option>
+                            <option value="low">Low</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-2 d-flex align-items-end">
+                        <button class="btn btn-sm btn-primary w-100" id="refreshBtn">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -170,20 +173,19 @@
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
+                <table class="table table-hover mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th>Timestamp</th>
+                            <th class="d-none d-md-table-cell">Timestamp</th>
                             <th>Domain</th>
-                            <th>Rule</th>
+                            <th class="d-none d-sm-table-cell">Rule</th>
                             <th>Priority</th>
-                            <th>Keywords</th>
-                            <th>Actions</th>
+                            <th class="d-none d-md-table-cell">Keywords</th>
                         </tr>
                     </thead>
                     <tbody id="matchesTableBody">
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-5">
+                            <td colspan="5" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-1 d-block mb-2"></i>
                                 No matches found. Waiting for certificates...
                             </td>

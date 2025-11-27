@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/canary.jpg" alt="Canary Logo" width="200"/>
+  <img src="web/canary.webp" alt="Canary Logo" width="200"/>
 </div>
 
 # Canary - Certificate Transparency Monitor
@@ -15,6 +15,7 @@ Real-time phishing detection through Certificate Transparency log monitoring wit
 Canary monitors Certificate Transparency (CT) logs to identify potentially malicious domains as certificates are issued. It uses powerful rule-based detection with Boolean logic to catch sophisticated phishing campaigns targeting your brands.
 
 **Key Features:**
+
 - **Rule-Based Detection** - Complex patterns like `(paypal OR stripe) AND login NOT official`
 - **High Performance** - Aho-Corasick algorithm with automatic keyword extraction
 - **Priority System** - Classify threats (critical, high, medium, low)
@@ -25,12 +26,14 @@ Canary monitors Certificate Transparency (CT) logs to identify potentially malic
 ## Why
 
 **Use Cases:**
+
 - Brand protection and phishing detection
 - Security monitoring for corporate domains
 - Research on certificate issuance patterns
 - Real-time threat intelligence gathering
 
 **Benefits:**
+
 - Catch phishing domains as certificates are issued (hours before DNS propagation)
 - Sub-millisecond matching with minimal resource usage
 - Flexible rules without code changes
@@ -48,8 +51,8 @@ cd deployments/docker
 docker-compose up -d --build
 ```
 
-
 This includes:
+
 - Canary service (port 8080)
 - Certspotter monitoring 40+ CT logs
 - SQLite database with automatic partitioning
@@ -65,6 +68,7 @@ docker-compose logs canary | grep "INITIAL USER CREATED" -A 5
 ```
 
 Example output:
+
 ```
 ========================================
 INITIAL USER CREATED
@@ -75,9 +79,10 @@ Session expires after 30 days
 ========================================
 ```
 
-Access the dashboard at http://localhost:8080 and log in with these credentials.
+Access the dashboard at <http://localhost:8080> and log in with these credentials.
 
 **Access Services:**
+
 ```bash
 # Web Dashboard (requires login)
 open http://localhost:8080
@@ -90,12 +95,14 @@ curl http://localhost:8080/health
 ```
 
 **View Logs:**
+
 ```bash
 docker-compose logs -f canary
 docker-compose logs -f certspotter
 ```
 
 **Stop Services:**
+
 ```bash
 docker-compose down
 ```
@@ -136,6 +143,7 @@ go run scripts/create_user.go -username admin -password newpassword
 ```
 
 **Script Usage:**
+
 ```bash
 Usage: go run scripts/create_user.go -username <username> -password <password> [-db <db_path>]
 
@@ -145,12 +153,14 @@ Example:
 ```
 
 **Note:** There is no `/auth/create-user` API endpoint. Users can only be created:
+
 1. Automatically on first startup
 2. Using the `create_user.go` script
 
 ### Login & Logout
 
 **Login via API:**
+
 ```bash
 curl -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
@@ -159,12 +169,14 @@ curl -X POST http://localhost:8080/auth/login \
 ```
 
 **Logout:**
+
 ```bash
 curl -X POST http://localhost:8080/auth/logout -b cookies.txt
 ```
 
 **Using the Web UI:**
-- Navigate to http://localhost:8080
+
+- Navigate to <http://localhost:8080>
 - Enter your credentials
 - Click logout button in the top right corner
 
@@ -196,6 +208,7 @@ rules:
 ```
 
 **Rule Fields:**
+
 - `name` - Unique identifier
 - `keywords` - Boolean expression (AND, OR, NOT with parentheses)
 - `priority` - Threat level: `critical`, `high`, `medium`, `low`
@@ -205,11 +218,13 @@ rules:
 ### Managing Rules
 
 **Reload from File:**
+
 ```bash
 curl -X POST http://localhost:8080/rules/reload
 ```
 
 **Via API:**
+
 ```bash
 # List all rules
 curl http://localhost:8080/rules
@@ -244,6 +259,7 @@ curl -X PUT http://localhost:8080/rules/toggle/stripe-phishing
 ```
 
 **Via Web UI:**
+
 - Navigate to the Rules tab in the dashboard
 - Use the UI to create, edit, toggle, or delete rules
 - Changes are immediately reflected
@@ -255,6 +271,7 @@ curl -X PUT http://localhost:8080/rules/toggle/stripe-phishing
 Most endpoints require authentication via session cookie. Login first to obtain a session.
 
 **Get Session Cookie:**
+
 ```bash
 curl -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
@@ -268,6 +285,7 @@ curl http://localhost:8080/matches -b cookies.txt
 ### Endpoints
 
 **Public Endpoints:**
+
 - `GET /login` - Login page
 - `POST /auth/login` - Authenticate user
 - `POST /hook` - Certspotter webhook (no auth required)
@@ -292,6 +310,7 @@ curl -X POST http://localhost:8080/matches/clear -b cookies.txt
 ```
 
 **Response Example:**
+
 ```json
 {
   "count": 50,
@@ -362,6 +381,7 @@ curl "http://localhost:8080/metrics/performance?minutes=60" -b cookies.txt | jq
 ```
 
 **Metrics Response:**
+
 ```json
 {
   "queue_len": 0,
@@ -398,7 +418,7 @@ curl -X POST http://localhost:8080/hook \
 
 Interactive API documentation with all endpoints, schemas, and examples:
 
-**http://localhost:8080/docs**
+**<http://localhost:8080/docs>**
 
 ## Configuration
 
@@ -414,6 +434,7 @@ CLEANUP_INTERVAL_HOURS=24        # Hours between cleanups (default: 24)
 ```
 
 **Docker Example:**
+
 ```yaml
 # docker-compose.yml
 environment:
@@ -428,11 +449,13 @@ environment:
 ### Reverse Proxy Setup (Caddy/nginx)
 
 When running behind a reverse proxy with HTTPS, set the `DOMAIN` environment variable. This automatically:
+
 - Enables secure cookies (`Secure` flag)
 - Sets CORS origin to `https://yourdomain.com`
 - Enables `Access-Control-Allow-Credentials` for cookie-based auth
 
 **Why `DOMAIN` is needed:**
+
 - Browsers require `Secure` flag on cookies when using HTTPS
 - Cookie-based authentication needs proper CORS with credentials
 - Without it, login will fail when accessed via HTTPS
@@ -440,6 +463,7 @@ When running behind a reverse proxy with HTTPS, set the `DOMAIN` environment var
 #### Caddy Setup
 
 **1. Create Caddyfile:**
+
 ```caddy
 canary.yourdomain.com {
     reverse_proxy canary:8080 {
@@ -457,6 +481,7 @@ canary.yourdomain.com {
 ```
 
 **2. Update docker-compose.yml:**
+
 ```yaml
 services:
   caddy:
@@ -485,6 +510,7 @@ volumes:
 ```
 
 **3. Start services:**
+
 ```bash
 docker-compose up -d
 ```
@@ -496,6 +522,7 @@ See `deployments/Caddyfile.example` for a complete configuration.
 #### nginx Setup
 
 **1. Create nginx.conf:**
+
 ```nginx
 server {
     listen 80;
@@ -521,6 +548,7 @@ server {
 ```
 
 **2. Set DOMAIN in docker-compose.yml:**
+
 ```yaml
 canary:
   environment:
@@ -532,18 +560,21 @@ canary:
 Set `PUBLIC_DASHBOARD=true` to make the dashboard accessible without authentication for viewing only.
 
 **What it does:**
+
 - ✅ Dashboard and rules are viewable without login
 - ✅ Matches, metrics, and API docs are publicly accessible
 - ❌ Editing, creating, deleting rules requires authentication
 - ❌ Clearing matches requires authentication
 
 **Use cases:**
+
 - Share phishing detection results with your team
 - Public threat intelligence dashboard
 - Security operations center (SOC) displays
 - Transparency for stakeholders
 
 **Example:**
+
 ```yaml
 # docker-compose.yml
 environment:
@@ -551,12 +582,14 @@ environment:
 ```
 
 **Security notes:**
+
 - Anyone can view matches and rules
 - Modifications still require login
 - Consider if your matched domains contain sensitive information
 - Use `DOMAIN` with public dashboard for proper CORS
 
 **How it works:**
+
 - GET requests allowed without auth (viewing)
 - POST/PUT/DELETE require authentication (editing)
 - UI automatically hides edit buttons when not authenticated
@@ -565,10 +598,12 @@ environment:
 ### Data Persistence
 
 The `data/` directory contains:
+
 - `rules.yaml` - Detection rules
 - `matches.db` - SQLite database with match history
 
 **Docker Volume:**
+
 ```yaml
 volumes:
   - ./data:/app/data  # Persistent storage
@@ -628,6 +663,7 @@ fi
 8. **API/UI** - Access via authenticated REST API or web dashboard
 
 **Performance:**
+
 - Sub-millisecond matching per certificate
 - Thousands of certificates per second
 - Minimal memory footprint
@@ -636,6 +672,7 @@ fi
 ## Troubleshooting
 
 **Can't login:**
+
 ```bash
 # Check initial user credentials in logs
 docker-compose logs canary | grep "INITIAL USER"
@@ -645,6 +682,7 @@ go run scripts/create_user.go -username newadmin -password newpass
 ```
 
 **No matches appearing:**
+
 ```bash
 # Check rules loaded
 curl http://localhost:8080/rules
@@ -660,6 +698,7 @@ curl -X POST http://localhost:8080/rules/reload
 ```
 
 **API connection errors:**
+
 ```bash
 # Check health
 curl http://localhost:8080/health
@@ -672,6 +711,7 @@ docker-compose logs canary
 ```
 
 **Database issues:**
+
 ```bash
 # Check database exists
 ls -lh data/matches.db
@@ -686,21 +726,25 @@ df -h
 ## Development
 
 **Build:**
+
 ```bash
 go build -o canary ./cmd/canary
 ```
 
 **Requirements:**
+
 - Go 1.21+
 - CGO enabled (for SQLite)
 - GCC/musl-dev
 
 **Dependencies:**
+
 ```bash
 go mod download
 ```
 
 **Test:**
+
 ```bash
 go test ./...
 ```
@@ -716,45 +760,45 @@ Canary uses the following open-source dependencies. We acknowledge and are grate
 ### Certspotter
 
 **License:** Mozilla Public License 2.0 (MPL-2.0)
-**Source:** https://github.com/SSLMate/certspotter
+**Source:** <https://github.com/SSLMate/certspotter>
 **Copyright:** Copyright © SSLMate, Inc.
 
-This project uses Certspotter for monitoring Certificate Transparency logs. Certspotter is licensed under the Mozilla Public License 2.0. The source code is available at the repository above, and we build it from source in our Docker deployment. The full MPL-2.0 license is available at http://mozilla.org/MPL/2.0/.
+This project uses Certspotter for monitoring Certificate Transparency logs. Certspotter is licensed under the Mozilla Public License 2.0. The source code is available at the repository above, and we build it from source in our Docker deployment. The full MPL-2.0 license is available at <http://mozilla.org/MPL/2.0/>.
 
 ### go-sqlite3
 
 **License:** MIT License
-**Source:** https://github.com/mattn/go-sqlite3
+**Source:** <https://github.com/mattn/go-sqlite3>
 **Copyright:** Copyright (c) 2014 Yasuhiro Matsumoto
 
 ### ahocorasick
 
 **License:** MIT License
-**Source:** https://github.com/anknown/ahocorasick
+**Source:** <https://github.com/anknown/ahocorasick>
 **Copyright:** Copyright (c) 2015 hanshinan
 
 ### gopsutil
 
 **License:** BSD 3-Clause License
-**Source:** https://github.com/shirou/gopsutil
+**Source:** <https://github.com/shirou/gopsutil>
 **Copyright:** Copyright (c) 2014, WAKAYAMA Shirou
 
 ### minify
 
 **License:** MIT License
-**Source:** https://github.com/tdewolff/minify
+**Source:** <https://github.com/tdewolff/minify>
 **Copyright:** Copyright (c) 2025 Taco de Wolff
 
 ### yaml.v3
 
 **License:** MIT License and Apache License 2.0
-**Source:** https://github.com/go-yaml/yaml
+**Source:** <https://github.com/go-yaml/yaml>
 **Copyright:** Copyright (c) 2006-2011 Kirill Simonov, Copyright (c) 2011-2019 Canonical Ltd
 
 ### golang.org/x/crypto
 
 **License:** BSD 3-Clause License
-**Source:** https://cs.opensource.google/go/x/crypto
+**Source:** <https://cs.opensource.google/go/x/crypto>
 **Copyright:** Copyright 2009 The Go Authors
 
 ---

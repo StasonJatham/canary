@@ -5,7 +5,7 @@ class Dashboard {
         this.matches = [];
         this.filteredMatches = [];
         this.currentPage = 0;
-        this.pageSize = 20;
+        this.pageSize = 40;
         this.refreshInterval = null;
 
         this.init();
@@ -191,6 +191,12 @@ class Dashboard {
         const tbody = document.getElementById('matchesTableBody');
         if (!tbody) return;
 
+        // Capture currently open rows to restore state after refresh
+        const openRows = new Set();
+        tbody.querySelectorAll('.collapse.show').forEach(el => {
+            openRows.add(el.id);
+        });
+
         const start = this.currentPage * this.pageSize;
         const end = start + this.pageSize;
         const pageMatches = this.filteredMatches.slice(start, end);
@@ -208,7 +214,7 @@ class Dashboard {
         if (pageMatches.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="6" class="text-center text-muted py-5">
+                    <td colspan="5" class="text-center text-muted py-5">
                         <i class="bi bi-inbox fs-1 d-block mb-2"></i>
                         No matches found. Adjust filters or wait for new certificates...
                     </td>
@@ -217,13 +223,56 @@ class Dashboard {
             return;
         }
 
-        tbody.innerHTML = pageMatches.map(match => this.renderMatchRow(match)).join('');
+        tbody.innerHTML = pageMatches.map(match => this.renderMatchRow(match, openRows)).join('');
     }
 
-    renderMatchRow(match) {
+    renderMatchRow(match, openRows = new Set()) {
         const timestamp = new Date(match.detected_at).toLocaleString();
-        const domains = match.dns_names.slice(0, 3).join(', ') +
-                       (match.dns_names.length > 3 ? ` (+${match.dns_names.length - 3} more)` : '');
+        // Use stable ID based on hash to preserve state across refreshes
+        const matchId = `match-${match.tbs_sha256 || match.id || Math.random().toString(36).substr(2, 9)}`;
+        const isOpen = openRows.has(matchId);
+        
+        // Process keywords first to use for domain highlighting
+        let keywords = [];
+        if (Array.isArray(match.matched_domains)) {
+            match.matched_domains.forEach(s => {
+                if (typeof s === 'string') {
+                    s.split(',').forEach(k => {
+                        if (k.trim()) keywords.push(k.trim());
+                    });
+                }
+            });
+        } else if (typeof match.matched_domains === 'string') {
+            keywords = match.matched_domains.split(',').filter(k => k.trim());
+        }
+        // Deduplicate keywords
+        keywords = [...new Set(keywords)];
+
+        // Helper for highlighting
+        const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const highlightDomain = (domain) => {
+            if (!keywords.length) return this.escapeHtml(domain);
+            const pattern = new RegExp(`(${keywords.map(k => escapeRegExp(k)).join('|')})`, 'gi');
+            return domain.split(pattern).map(part => {
+                return keywords.some(k => k.toLowerCase() === part.toLowerCase())
+                    ? `<span class="text-danger fw-bold">${this.escapeHtml(part)}</span>`
+                    : this.escapeHtml(part);
+            }).join('');
+        };
+
+        // Sort domains: matches first
+        const isMatch = (domain) => keywords.some(kw => domain.toLowerCase().includes(kw.toLowerCase()));
+        const sortedDomains = [...match.dns_names].sort((a, b) => {
+            const aMatch = isMatch(a);
+            const bMatch = isMatch(b);
+            if (aMatch && !bMatch) return -1;
+            if (!aMatch && bMatch) return 1;
+            return a.localeCompare(b);
+        });
+
+        const domainCount = sortedDomains.length;
+        const firstDomain = sortedDomains[0];
+        const remainingCount = domainCount - 1;
 
         const priorityBadge = {
             critical: 'danger',
@@ -232,32 +281,67 @@ class Dashboard {
             low: 'secondary'
         }[match.priority] || 'secondary';
 
-        const keywords = Array.isArray(match.matched_domains)
-            ? match.matched_domains.join(', ')
-            : match.matched_domains;
+        const keywordsHtml = keywords.map(k => 
+            `<span class="badge bg-light text-dark border me-1 mb-1">${this.escapeHtml(k)}</span>`
+        ).join('');
 
-        return `
-            <tr>
-                <td><small>${this.escapeHtml(timestamp)}</small></td>
+        // Main Row
+        const mainRow = `
+            <tr style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#${matchId}" aria-expanded="${isOpen}" aria-controls="${matchId}" class="${isOpen ? '' : 'collapsed'}">
+                <td class="text-nowrap d-none d-md-table-cell"><small>${this.escapeHtml(timestamp)}</small></td>
                 <td>
-                    <div class="text-truncate" style="max-width: 300px;" title="${this.escapeHtml(match.dns_names.join(', '))}">
-                        ${this.escapeHtml(domains)}
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-chevron-down me-2 text-muted" style="font-size: 0.8em;"></i>
+                        <span class="text-truncate" style="max-width: 200px;">
+                            ${highlightDomain(firstDomain)}
+                        </span>
+                        ${remainingCount > 0 ? `<span class="badge bg-secondary ms-2">+${remainingCount}</span>` : ''}
+                    </div>
+                    <div class="d-md-none mt-1">
+                        <small class="text-muted">${this.escapeHtml(timestamp)}</small>
                     </div>
                 </td>
-                <td><span class="badge bg-secondary">${this.escapeHtml(match.matched_rule)}</span></td>
+                <td class="d-none d-sm-table-cell"><span class="badge bg-secondary">${this.escapeHtml(match.matched_rule)}</span></td>
                 <td><span class="badge bg-${priorityBadge}">${this.escapeHtml(match.priority)}</span></td>
-                <td><small><code>${this.escapeHtml(keywords)}</code></small></td>
-                <td>
-                    <a href="https://crt.sh/?q=${encodeURIComponent(match.tbs_sha256)}"
-                       target="_blank"
-                       rel="noopener noreferrer"
-                       class="btn btn-sm btn-outline-primary"
-                       title="View on crt.sh">
-                        <i class="bi bi-box-arrow-up-right"></i>
-                    </a>
+                <td class="d-none d-md-table-cell">${keywordsHtml}</td>
+            </tr>
+        `;
+
+        // Details Row (Collapsible)
+        const detailsRow = `
+            <tr>
+                <td colspan="5" class="p-0 border-0">
+                    <div class="collapse ${isOpen ? 'show' : ''}" id="${matchId}">
+                        <div class="card card-body bg-light m-2 border-0">
+                            <div class="d-sm-none mb-2">
+                                <strong>Rule:</strong> ${this.escapeHtml(match.matched_rule)}<br>
+                                <strong>Keywords:</strong> ${keywordsHtml}
+                            </div>
+                            <h6 class="card-subtitle mb-2 text-muted">All Domains (${domainCount})</h6>
+                            <div class="row g-2">
+                                ${sortedDomains.map(domain => {
+                                    return `
+                                    <div class="col-12 col-md-6 col-lg-4">
+                                        <div class="d-flex align-items-center p-2 rounded bg-white border" 
+                                             role="button"
+                                             onclick="window.copyToClipboard('${this.escapeHtml(domain)}', this.querySelector('.copy-icon-wrapper'))">
+                                            <span class="text-truncate me-2 flex-grow-1 text-muted" title="${this.escapeHtml(domain)}">
+                                                ${highlightDomain(domain)}
+                                            </span>
+                                            <span class="copy-icon-wrapper text-muted" style="cursor: pointer;">
+                                                <i class="bi bi-clipboard"></i>
+                                            </span>
+                                        </div>
+                                    </div>`;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
                 </td>
             </tr>
         `;
+
+        return mainRow + detailsRow;
     }
 
     prevPage() {
@@ -304,6 +388,20 @@ class Dashboard {
         return div.innerHTML;
     }
 }
+
+// Global copy to clipboard function
+window.copyToClipboard = function(text, element) {
+    navigator.clipboard.writeText(text).then(() => {
+        // Show feedback
+        const originalHtml = element.innerHTML;
+        element.innerHTML = '<i class="bi bi-check2 me-1 text-success"></i>Copied!';
+        setTimeout(() => {
+            element.innerHTML = originalHtml;
+        }, 1500);
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+    });
+};
 
 // Initialize dashboard when DOM is ready
 if (document.readyState === 'loading') {

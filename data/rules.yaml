@@ -158,3 +158,8 @@ rules:
     priority: low
     enabled: false
     comment: "AWS/Amazon infrastructure (disabled - too noisy)"
+  - name: test_idna
+    keywords: münster OR münchen OR charité OR berlin
+    priority: high
+    enabled: true
+    comment: Test

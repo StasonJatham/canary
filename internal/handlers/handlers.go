@@ -16,6 +16,7 @@ import (
 	"canary/internal/models"
 	"canary/internal/rules"
 
+	"golang.org/x/net/idna"
 	"gopkg.in/yaml.v3"
 )
 
@@ -59,6 +60,35 @@ func Hook(w http.ResponseWriter, r *http.Request) {
 			allDomains = append(allDomains, ep.DNSName)
 		}
 	}
+
+	// Expand domains with Punycode/Unicode variants to handle homoglyphs
+	// This ensures that a rule for "münster" matches "xn--mnster-bxa" and vice versa
+	expandedDomains := make([]string, 0, len(allDomains)*2)
+	seen := make(map[string]bool)
+
+	for _, domain := range allDomains {
+		if !seen[domain] {
+			expandedDomains = append(expandedDomains, domain)
+			seen[domain] = true
+		}
+
+		// Try ToASCII (Punycode)
+		if ascii, err := idna.ToASCII(domain); err == nil && ascii != domain {
+			if !seen[ascii] {
+				expandedDomains = append(expandedDomains, ascii)
+				seen[ascii] = true
+			}
+		}
+
+		// Try ToUnicode
+		if unicode, err := idna.ToUnicode(domain); err == nil && unicode != domain {
+			if !seen[unicode] {
+				expandedDomains = append(expandedDomains, unicode)
+				seen[unicode] = true
+			}
+		}
+	}
+	allDomains = expandedDomains
 
 	// Use rule engine's Aho-Corasick directly (no separate keywords.txt)
 	engineVal := config.RuleEngine.Load()

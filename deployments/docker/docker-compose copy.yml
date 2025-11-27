@@ -26,6 +26,21 @@ services:
     networks:
       - canary-network
 
+  certspotter:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.certspotter
+    container_name: certspotter-monitor
+    environment:
+      - CANARY_ENDPOINT=http://canary:8080/hook
+    volumes:
+      - certspotter-data:/var/lib/certspotter
+    depends_on:
+      canary:
+        condition: service_healthy
+    networks:
+      - canary-network
+    restart: unless-stopped
 
 volumes:
   certspotter-data:

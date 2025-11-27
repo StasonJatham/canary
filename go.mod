@@ -8,6 +8,7 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/tdewolff/minify/v2 v2.24.6
 	golang.org/x/crypto v0.43.0
+	golang.org/x/net v0.33.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
