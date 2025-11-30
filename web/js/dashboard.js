@@ -315,9 +315,10 @@ class Dashboard {
             <tr>
                 <td colspan="5" class="p-0 border-0">
                     <div class="collapse ${isOpen ? 'show' : ''}" id="${matchId}">
-                        <div class="card card-body bg-light m-2 border-0">
+                        <div class="card card-body bg-body-tertiary m-2 border-0">
                             <div class="d-sm-none mb-2">
                                 <strong>Rule:</strong> ${this.escapeHtml(match.matched_rule)}<br>
+                                <strong>Priority:</strong> <span class="badge bg-${priorityBadge}">${this.escapeHtml(match.priority)}</span><br>
                                 <strong>Keywords:</strong> ${keywordsHtml}
                             </div>
                             ${dropdownDomains.length > 0 ? `
@@ -326,7 +327,7 @@ class Dashboard {
                                 ${dropdownDomains.map(domain => {
                                     return `
                                     <div class="col-12 col-md-6 col-lg-4">
-                                        <div class="d-flex align-items-center p-2 rounded bg-white border" 
+                                        <div class="d-flex align-items-center p-2 rounded bg-body border" 
                                              role="button"
                                              onclick="window.copyToClipboard('${this.escapeHtml(domain)}', this.querySelector('.copy-icon-wrapper'))">
                                             <span class="text-truncate me-2 flex-grow-1 text-muted" title="${this.escapeHtml(domain)}">

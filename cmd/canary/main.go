@@ -167,6 +167,7 @@ func main() {
 	mux.Handle("/rules", viewMW(http.HandlerFunc(handlers.ServeRulesPage)))       // HTML view
 	mux.Handle("/rules/new", authMW(http.HandlerFunc(handlers.ServeRuleForm)))    // HTML form
 	mux.Handle("/rules/edit/", authMW(http.HandlerFunc(handlers.ServeRuleForm)))  // HTML form
+	mux.Handle("/help", viewMW(http.HandlerFunc(handlers.ServeHelpPage)))         // HTML view
 	mux.Handle("/docs", viewMW(http.HandlerFunc(handlers.ServeAPIDocs)))
 	mux.Handle("/openapi.yaml", viewMW(http.HandlerFunc(handlers.ServeOpenAPISpec)))
 

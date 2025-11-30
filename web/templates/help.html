@@ -1,0 +1,187 @@
+{{template "base" .}}
+
+{{define "title"}}Help & Documentation{{end}}
+{{define "description"}}Canary CT Monitor - User Guide and Documentation{{end}}
+
+{{define "content"}}
+<main class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div class="d-flex align-items-center mb-4">
+                <div>
+                    <h2 class="mb-0">Documentation</h2>
+                    <p class="text-muted mb-0">User guide, rule syntax, and API reference</p>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <!-- Navigation Sidebar -->
+                <div class="col-md-3 d-none d-md-block">
+                    <div class="list-group sticky-top" style="top: 80px;">
+                        <a href="#dashboard" class="list-group-item list-group-item-action">Dashboard</a>
+                        <a href="#rules" class="list-group-item list-group-item-action">Rule Syntax</a>
+                        <a href="#api" class="list-group-item list-group-item-action">API Usage</a>
+                        <a href="#examples" class="list-group-item list-group-item-action">Examples</a>
+                    </div>
+                </div>
+
+                <!-- Content -->
+                <div class="col-md-9">
+                    <!-- Dashboard Section -->
+                    <section id="dashboard" class="mb-5">
+                        <div class="card border mb-3">
+                            <div class="card-header">
+                                <h4 class="mb-0"><i class="bi bi-speedometer2 me-2"></i>Dashboard</h4>
+                            </div>
+                            <div class="card-body">
+                                <p>The dashboard provides a real-time view of certificate matches as they are detected. It automatically refreshes every 5 seconds.</p>
+                                
+                                <h5>Key Features:</h5>
+                                <ul>
+                                    <li><strong>Live Feed:</strong> New matches appear instantly at the top of the list.</li>
+                                    <li><strong>Filtering:</strong> Use the search bar to filter by domain name or keyword.</li>
+                                    <li><strong>Time Range:</strong> Adjust the "Time Range" dropdown to view matches from the last 10 minutes up to 24 hours.</li>
+                                    <li><strong>Details:</strong> Click on any row to expand it and see more details, including the full list of matched domains and the specific rule that triggered the match.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Rules Section -->
+                    <section id="rules" class="mb-5">
+                        <div class="card border mb-3">
+                            <div class="card-header">
+                                <h4 class="mb-0"><i class="bi bi-list-check me-2"></i>Rule Syntax</h4>
+                            </div>
+                            <div class="card-body">
+                                <p>Canary uses a powerful boolean logic engine to match certificates against your rules. Rules are defined in <code>data/rules.yaml</code> or via the web interface.</p>
+
+                                <h5>Operators:</h5>
+                                <table class="table table-bordered table-sm">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Operator</th>
+                                            <th>Description</th>
+                                            <th>Example</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><code>AND</code></td>
+                                            <td>Both terms must be present</td>
+                                            <td><code>paypal AND login</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>OR</code></td>
+                                            <td>Either term must be present</td>
+                                            <td><code>apple OR iphone</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>NOT</code></td>
+                                            <td>Term must NOT be present</td>
+                                            <td><code>apple AND NOT fruit</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>( )</code></td>
+                                            <td>Grouping for precedence</td>
+                                            <td><code>(bank OR chase) AND login</code></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <h5>Examples:</h5>
+                                <div class="bg-light p-3 rounded border mb-3">
+                                    <h6 class="text-muted mb-2">Simple Keyword</h6>
+                                    <code>keywords: apple</code>
+                                </div>
+                                <div class="bg-light p-3 rounded border mb-3">
+                                    <h6 class="text-muted mb-2">Phishing Detection</h6>
+                                    <code>keywords: (paypal OR pay-pal) AND (secure OR login OR update)</code>
+                                </div>
+                                <div class="bg-light p-3 rounded border">
+                                    <h6 class="text-muted mb-2">Brand Protection (excluding official domains)</h6>
+                                    <code>keywords: mycompany AND NOT (mycompany.com OR mail.mycompany.com)</code>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- API Section -->
+                    <section id="api" class="mb-5">
+                        <div class="card border mb-3">
+                            <div class="card-header">
+                                <h4 class="mb-0"><i class="bi bi-code-slash me-2"></i>API Usage</h4>
+                            </div>
+                            <div class="card-body">
+                                <p>Canary provides a full REST API for integration with other tools. Most endpoints require authentication via a session cookie.</p>
+                                
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    For interactive documentation, visit the <a href="/docs" class="alert-link">Swagger UI</a>.
+                                </div>
+
+                                <h5>Authentication:</h5>
+                                <pre class="bg-body-tertiary p-3 rounded border"><code># 1. Login to get a session cookie
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "yourpassword"}' \
+  -c cookies.txt
+
+# 2. Use the cookie in subsequent requests
+curl http://localhost:8080/matches -b cookies.txt</code></pre>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Examples Section -->
+                    <section id="examples" class="mb-5">
+                        <div class="card border mb-3">
+                            <div class="card-header">
+                                <h4 class="mb-0"><i class="bi bi-terminal me-2"></i>Integration Examples</h4>
+                            </div>
+                            <div class="card-body">
+                                <h5>Slack Alert Script</h5>
+                                <p>A simple bash script to check for new matches and send them to Slack:</p>
+                                <pre class="bg-body-tertiary p-3 rounded border"><code>#!/bin/bash
+# check-canary.sh
+
+MATCHES=$(curl -s http://localhost:8080/matches/recent?minutes=5 -b cookies.txt)
+COUNT=$(echo "$MATCHES" | jq '.count')
+
+if [ "$COUNT" -gt 0 ]; then
+  MESSAGE=$(echo "$MATCHES" | jq -r '.matches[] | "Priority: \(.priority) - Rule: \(.matched_rule) - Domains: \(.dns_names | join(", "))"')
+
+  curl -X POST https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
+    -H "Content-Type: application/json" \
+    -d "{\"text\": \"Canary Alert: $COUNT new matches\n$MESSAGE\"}"
+fi</code></pre>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+{{end}}
+
+{{define "extra_head"}}
+<style>
+    /* Smooth scrolling for anchor links */
+    html {
+        scroll-behavior: smooth;
+    }
+    /* Offset for sticky navbar */
+    section {
+        scroll-margin-top: 80px;
+    }
+    /* Reset code styles inside pre blocks for clean display */
+    pre code {
+        background-color: transparent !important;
+        color: inherit !important;
+        border: none !important;
+        padding: 0 !important;
+    }
+</style>
+{{end}}
+{{define "extra_js"}}{{end}}

@@ -617,3 +617,24 @@ func ServeLoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
+
+// ServeHelpPage renders the help/documentation page
+func ServeHelpPage(w http.ResponseWriter, r *http.Request) {
+	tmpl, err := parsePageTemplate("web/templates/help.html")
+	if err != nil {
+		http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data := struct {
+		ActivePage string
+		CSRFToken  string
+	}{
+		ActivePage: "help",
+		CSRFToken:  getCSRFToken(r),
+	}
+
+	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
+		http.Error(w, "Template execution error: "+err.Error(), http.StatusInternalServerError)
+	}
+}
